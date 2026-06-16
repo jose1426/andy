@@ -91,7 +91,7 @@ export const DIAS_GRACIA_CAPITALIZACION = 2
  * Reportes, Inicio) o el detalle de un préstamo, para que el estado no dependa
  * de haber visitado cada préstamo individualmente.
  */
-export async function reconciliarPrestamosVencidos(supabase: SupabaseClient, prestamoId?: number) {
+export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any, any, any>, prestamoId?: number) {
   const hoy = new Date().toISOString().slice(0, 10)
   const limiteCapitalizacion = addDias(hoy, -DIAS_GRACIA_CAPITALIZACION)
 
