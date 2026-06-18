@@ -9,6 +9,12 @@ export const fmtMoney = (v: number | null | undefined) =>
 export const fmtFecha = (d: string | null | undefined) =>
   d ? new Date(d + 'T00:00:00').toLocaleDateString('es-PA', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
 
+/** Normaliza un teléfono local a formato internacional (Panamá +507) para enlaces wa.me. */
+export function telefonoWhatsapp(tel: string | null | undefined): string {
+  const digitos = (tel || '').replace(/\D/g, '')
+  if (!digitos) return ''
+  return digitos.length <= 8 ? '507' + digitos : digitos
+}
 /** Filtra texto a solo dígitos y un punto decimal, para inputs de dinero/tasa sin usar type="number". */
 export const soloDecimal = (v: string): string => {
   const limpio = v.replace(/[^0-9.]/g, '')
