@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, telefonoWhatsapp } from '@/lib/prestamos'
 import type { Solicitud, EstadoSolicitud } from '@/types'
 
 const ESTADO_STYLE: Record<EstadoSolicitud, string> = {
@@ -16,6 +16,18 @@ const ESTADO_LABEL: Record<EstadoSolicitud, string> = {
   pendiente: 'Pendiente', aprobada: 'Aprobada', rechazada: 'Rechazada',
 }
 
+
+function mensajeResultado(s: Solicitud): string {
+  const nombreCompleto = `${s.nombre} ${s.apellido ?? ''}`.trim()
+  return s.estado === 'aprobada'
+    ? `🎉 ¡Buenas noticias, ${nombreCompleto}! Tu solicitud de préstamo${s.monto_solicitado ? ` por ${fmtMoney(s.monto_solicitado)}` : ''} ha sido *aprobada*. Pronto nos pondremos en contacto contigo para los siguientes pasos.`
+    : `Hola ${nombreCompleto}, gracias por tu interés. Lamentamos informarte que tu solicitud de préstamo no fue aprobada en esta ocasión.`
+}
+
+function linkWhatsappResultado(s: Solicitud): string {
+  const tel = telefonoWhatsapp(s.telefono)
+  return `https://wa.me/${tel}?text=${encodeURIComponent(mensajeResultado(s))}`
+}
 export default function SolicitudesPage() {
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])
   const [loading, setLoading] = useState(true)
@@ -127,10 +139,16 @@ export default function SolicitudesPage() {
                       {ESTADO_LABEL[s.estado]}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-center">
-                    {s.cliente_id && (
-                      <Link href={`/dashboard/clientes`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">Ver clientes →</Link>
-                    )}
+                                   <td className="px-4 py-2.5 text-center">
+                    <div className="flex items-center justify-center gap-3">
+                      {s.telefono && (
+                        <a href={linkWhatsappResultado(s)} target="_blank" rel="noopener noreferrer"
+                          className="text-emerald-600 hover:underline text-[12px] font-semibold">💬 Notificar</a>
+                      )}
+                      {s.cliente_id && (
+                        <Link href={`/dashboard/clientes`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">Ver clientes →</Link>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
