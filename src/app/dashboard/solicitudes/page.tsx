@@ -4,8 +4,10 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, telefonoWhatsapp } from '@/lib/prestamos'
-import type { Solicitud, EstadoSolicitud } from '@/types'
+import { fmtMoney, fmtFecha, telefonoWhatsapp, soloDecimal } from '@/lib/prestamos'
+import type { Solicitud, EstadoSolicitud, Frecuencia } from '@/types'
+
+const PERIODO_LABEL: Record<Frecuencia, string> = { semanal: 'semana', quincenal: 'quincena', mensual: 'mes' }
 
 const ESTADO_STYLE: Record<EstadoSolicitud, string> = {
   pendiente: 'bg-amber-100 text-amber-800 border-amber-300',
@@ -16,22 +18,37 @@ const ESTADO_LABEL: Record<EstadoSolicitud, string> = {
   pendiente: 'Pendiente', aprobada: 'Aprobada', rechazada: 'Rechazada',
 }
 
-
 function mensajeResultado(s: Solicitud): string {
   const nombreCompleto = `${s.nombre} ${s.apellido ?? ''}`.trim()
   return s.estado === 'aprobada'
-    ? `🎉 ¡Buenas noticias, ${nombreCompleto}! Tu solicitud de préstamo${s.monto_solicitado ? ` por ${fmtMoney(s.monto_solicitado)}` : ''} ha sido *aprobada*. Pronto nos pondremos en contacto contigo para los siguientes pasos.`
-    : `Hola ${nombreCompleto}, gracias por tu interés. Lamentamos informarte que tu solicitud de préstamo no fue aprobada en esta ocasión.`
+    ? `ðŸŽ‰ Â¡Buenas noticias, ${nombreCompleto}! Tu solicitud de prÃ©stamo${s.monto_solicitado ? ` por ${fmtMoney(s.monto_solicitado)}` : ''} ha sido *aprobada*. Pronto nos pondremos en contacto contigo para los siguientes pasos.`
+    : `Hola ${nombreCompleto}, gracias por tu interÃ©s. Lamentamos informarte que tu solicitud de prÃ©stamo no fue aprobada en esta ocasiÃ³n.`
 }
 
 function linkWhatsappResultado(s: Solicitud): string {
   const tel = telefonoWhatsapp(s.telefono)
   return `https://wa.me/${tel}?text=${encodeURIComponent(mensajeResultado(s))}`
 }
+
+function mensajeAprobacionConTerminos(s: Solicitud, monto: number, tasa: number, frecuencia: Frecuencia): string {
+  const nombreCompleto = `${s.nombre} ${s.apellido ?? ''}`.trim()
+  const periodo = PERIODO_LABEL[frecuencia]
+  const cuota = Math.round(monto * (tasa / 100) * 100) / 100
+  return `ðŸŽ‰ Â¡Buenas noticias, ${nombreCompleto}! Tu solicitud de prÃ©stamo fue *aprobada* con estos tÃ©rminos:\n\n` +
+    `ðŸ’° Monto: ${fmtMoney(monto)}\n` +
+    `ðŸ“ˆ InterÃ©s: ${tasa}% por ${periodo}\n` +
+    `ðŸ’µ Cuota estimada cada ${periodo}: ${fmtMoney(cuota)}\n\n` +
+    `Â¿EstÃ¡s de acuerdo con estas condiciones? RespÃ³ndenos para continuar. ðŸ™Œ`
+}
+
 export default function SolicitudesPage() {
   const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])
   const [loading, setLoading] = useState(true)
   const [procesando, setProcesando] = useState<number | null>(null)
+  const [aprobando, setAprobando] = useState<Solicitud | null>(null)
+  const [montoForm, setMontoForm] = useState('')
+  const [tasaForm, setTasaForm] = useState('')
+  const [frecuenciaForm, setFrecuenciaForm] = useState<Frecuencia>('quincenal')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -43,7 +60,21 @@ export default function SolicitudesPage() {
 
   useEffect(() => { load() }, [load])
 
-  const aprobar = async (s: Solicitud) => {
+  const abrirAprobar = (s: Solicitud) => {
+    setMontoForm(s.monto_solicitado ? String(s.monto_solicitado) : '')
+    setTasaForm('')
+    setFrecuenciaForm('quincenal')
+    setAprobando(s)
+  }
+
+  const confirmarAprobar = async () => {
+    const s = aprobando
+    if (!s) return
+    const monto = parseFloat(montoForm)
+    const tasa = parseFloat(tasaForm)
+    if (!monto || monto <= 0) { toast.error('Ingrese un monto vÃ¡lido.'); return }
+    if (!tasa || tasa <= 0) { toast.error('Ingrese una tasa de interÃ©s vÃ¡lida.'); return }
+
     setProcesando(s.id)
     try {
       const { data: cliente, error: errCli } = await supabase.from('clientes').insert({
@@ -56,7 +87,14 @@ export default function SolicitudesPage() {
         .update({ estado: 'aprobada', cliente_id: cliente.id }).eq('id', s.id)
       if (errSol) throw errSol
 
-      toast.success('Cliente creado. Ya puedes crear su préstamo.')
+      if (s.telefono) {
+        const tel = telefonoWhatsapp(s.telefono)
+        const mensaje = mensajeAprobacionConTerminos(s, monto, tasa, frecuenciaForm)
+        window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank', 'noopener,noreferrer')
+      }
+
+      toast.success('Cliente creado. Ya puedes crear su prÃ©stamo con estos mismos tÃ©rminos.')
+      setAprobando(null)
       load()
     } catch (e: any) {
       toast.error('Error: ' + e.message)
@@ -80,21 +118,21 @@ export default function SolicitudesPage() {
   return (
     <div className="space-y-4 animate-fadeIn">
       <div>
-        <h1 className="text-2xl font-bold text-[#0f172a]">Solicitudes de Préstamo</h1>
+        <h1 className="text-2xl font-bold text-[#0f172a]">Solicitudes de PrÃ©stamo</h1>
         <p className="text-[14px] text-slate-500 mt-0.5">
-          {pendientes.length} pendiente{pendientes.length !== 1 ? 's' : ''} · comparte{' '}
+          {pendientes.length} pendiente{pendientes.length !== 1 ? 's' : ''} Â· comparte{' '}
           <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[12px]">/solicitar</code> con tus clientes
         </p>
       </div>
 
       <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
         <div className="px-5 py-3 bg-gradient-to-r from-[#0f172a] to-[#059669] text-white font-bold text-[14px]">
-          ⏳ Pendientes de revisión
+          â³ Pendientes de revisiÃ³n
         </div>
         {loading ? (
-          <div className="py-10 text-center text-slate-400 text-[13px]">Cargando…</div>
+          <div className="py-10 text-center text-slate-400 text-[13px]">Cargandoâ€¦</div>
         ) : pendientes.length === 0 ? (
-          <div className="py-10 text-center text-slate-400 text-[13px]">Sin solicitudes pendientes 🎉</div>
+          <div className="py-10 text-center text-slate-400 text-[13px]">Sin solicitudes pendientes ðŸŽ‰</div>
         ) : (
           <div className="divide-y divide-[#f1f5f9]">
             {pendientes.map(s => (
@@ -102,8 +140,8 @@ export default function SolicitudesPage() {
                 <div>
                   <div className="font-bold text-[#0f172a] text-[14px]">{s.nombre} {s.apellido}</div>
                   <div className="text-[12px] text-slate-500 mt-0.5">
-                    {s.cedula || 'Sin cédula'} · {s.telefono || 'Sin teléfono'}
-                    {s.monto_solicitado ? ` · Solicita ${fmtMoney(s.monto_solicitado)}` : ''}
+                    {s.cedula || 'Sin cÃ©dula'} Â· {s.telefono || 'Sin telÃ©fono'}
+                    {s.monto_solicitado ? ` Â· Solicita ${fmtMoney(s.monto_solicitado)}` : ''}
                   </div>
                   {s.referencia && <div className="text-[12px] text-slate-400 mt-0.5">Referencia: {s.referencia}</div>}
                   <div className="text-[11px] text-slate-400 mt-0.5">{fmtFecha(s.created_at.slice(0, 10))}</div>
@@ -111,11 +149,11 @@ export default function SolicitudesPage() {
                 <div className="flex items-center gap-2">
                   <button onClick={() => rechazar(s)} disabled={procesando === s.id}
                     className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-[12px] font-bold disabled:opacity-60">
-                    ❌ Rechazar
+                    âŒ Rechazar
                   </button>
-                  <button onClick={() => aprobar(s)} disabled={procesando === s.id}
+                  <button onClick={() => abrirAprobar(s)} disabled={procesando === s.id}
                     className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold disabled:opacity-60">
-                    {procesando === s.id ? '⏳ Procesando…' : '✅ Aprobar'}
+                    {procesando === s.id ? 'â³ Procesandoâ€¦' : 'âœ… Aprobar'}
                   </button>
                 </div>
               </div>
@@ -132,21 +170,21 @@ export default function SolicitudesPage() {
               {resueltas.map(s => (
                 <tr key={s.id} className="border-b border-[#f1f5f9] last:border-0">
                   <td className="px-5 py-2.5 font-semibold text-[#0f172a]">{s.nombre} {s.apellido}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{s.telefono || '—'}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{s.monto_solicitado ? fmtMoney(s.monto_solicitado) : '—'}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{s.telefono || 'â€”'}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{s.monto_solicitado ? fmtMoney(s.monto_solicitado) : 'â€”'}</td>
                   <td className="px-4 py-2.5 text-center">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${ESTADO_STYLE[s.estado]}`}>
                       {ESTADO_LABEL[s.estado]}
                     </span>
                   </td>
-                                   <td className="px-4 py-2.5 text-center">
+                  <td className="px-4 py-2.5 text-center">
                     <div className="flex items-center justify-center gap-3">
                       {s.telefono && (
                         <a href={linkWhatsappResultado(s)} target="_blank" rel="noopener noreferrer"
-                          className="text-emerald-600 hover:underline text-[12px] font-semibold">💬 Notificar</a>
+                          className="text-emerald-600 hover:underline text-[12px] font-semibold">ðŸ’¬ Notificar</a>
                       )}
                       {s.cliente_id && (
-                        <Link href={`/dashboard/clientes`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">Ver clientes →</Link>
+                        <Link href={`/dashboard/clientes`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">Ver clientes â†’</Link>
                       )}
                     </div>
                   </td>
@@ -154,6 +192,57 @@ export default function SolicitudesPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {aprobando && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={e => e.target === e.currentTarget && setAprobando(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-slideUp">
+            <div className="bg-gradient-to-r from-[#0f172a] to-[#059669] px-6 py-4 flex items-center justify-between">
+              <span className="text-white font-bold text-[15px]">âœ… Aprobar solicitud â€” {aprobando.nombre} {aprobando.apellido}</span>
+              <button onClick={() => setAprobando(null)} className="text-white/80 hover:text-white text-lg font-bold">âœ•</button>
+            </div>
+            <div className="p-6 space-y-3">
+              <p className="text-[12px] text-slate-500">
+                Define los tÃ©rminos para notificarle al cliente por WhatsApp antes de crear el prÃ©stamo.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto aprobado</label>
+                  <input type="text" inputMode="decimal" value={montoForm} onChange={e => setMontoForm(soloDecimal(e.target.value))}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Tasa de interÃ©s (% por periodo)</label>
+                  <input type="text" inputMode="decimal" value={tasaForm} onChange={e => setTasaForm(soloDecimal(e.target.value))}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Frecuencia</label>
+                <select value={frecuenciaForm} onChange={e => setFrecuenciaForm(e.target.value as Frecuencia)}
+                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400 bg-white">
+                  <option value="semanal">Semanal</option>
+                  <option value="quincenal">Quincenal</option>
+                  <option value="mensual">Mensual</option>
+                </select>
+              </div>
+
+              {!!parseFloat(montoForm) && !!parseFloat(tasaForm) && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-[12px] text-emerald-800">
+                  Cuota estimada cada {PERIODO_LABEL[frecuenciaForm]}: <b>{fmtMoney(parseFloat(montoForm) * (parseFloat(tasaForm) / 100))}</b>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button onClick={() => setAprobando(null)} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
+                <button onClick={confirmarAprobar} disabled={procesando === aprobando.id}
+                  className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold disabled:opacity-60">
+                  {procesando === aprobando.id ? 'â³ Procesandoâ€¦' : 'âœ… Aprobar y notificar'}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
