@@ -74,21 +74,21 @@ export default function ReciboPage() {
   useEffect(() => { load() }, [load])
 
   if (loading || !recibo) {
-    return <div className="py-20 text-center text-slate-400">Cargandoâ€¦</div>
+    return <div className="py-20 text-center text-slate-400">Cargando…</div>
   }
 
   const nombreCompleto = `${recibo.clienteNombre} ${recibo.clienteApellido ?? ''}`.trim()
   const mensaje =
-    `ðŸ§¾ *Cooperativa Hermandad â€” Recibo de pago*\n\n` +
+    `🧾 *Cooperativa Hermandad — Recibo de pago*\n\n` +
     `Cliente: ${nombreCompleto}\n` +
     `Fecha: ${fmtFecha(recibo.fecha)}\n` +
     `Cuota #${recibo.cuotaNumero}\n` +
     `Monto pagado: ${fmtMoney(recibo.monto)}\n` +
-    `  Â· InterÃ©s: ${fmtMoney(recibo.interesDelCobro)}\n` +
-    `  Â· Abono a capital: ${fmtMoney(recibo.capitalDelCobro)}\n` +
+    `  · Interés: ${fmtMoney(recibo.interesDelCobro)}\n` +
+    `  · Abono a capital: ${fmtMoney(recibo.capitalDelCobro)}\n` +
     `Forma de pago: ${FORMA_PAGO_LABEL[recibo.forma_pago]}\n` +
     `Saldo pendiente: ${fmtMoney(recibo.saldoCapital)}\n\n` +
-    `Â¡Gracias por su pago!`
+    `¡Gracias por su pago!`
 
   const tel = telefonoWhatsapp(recibo.clienteTelefono)
   const linkWhatsapp = `https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`
@@ -97,22 +97,22 @@ export default function ReciboPage() {
     <div className="space-y-4 animate-fadeIn max-w-lg mx-auto">
       <div className="flex items-center justify-between print:hidden">
         <button onClick={() => router.back()} className="text-[13px] text-slate-500 hover:text-slate-700 flex items-center gap-1">
-          â† Volver
+          ← Volver
         </button>
         <div className="flex items-center gap-2">
           <button onClick={() => window.print()} className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-[12px] font-bold">
-            ðŸ–¨ï¸ Imprimir
+            🖨️ Imprimir
           </button>
           <a href={linkWhatsapp} target="_blank" rel="noopener noreferrer"
             className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold">
-            ðŸ’¬ Enviar por WhatsApp
+            💬 Enviar por WhatsApp
           </a>
         </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
         <div className="px-6 py-5 bg-gradient-to-r from-[#0f172a] to-[#059669] text-white text-center">
-          <div className="text-[20px] font-extrabold">ðŸ¤ Cooperativa Hermandad</div>
+          <div className="text-[20px] font-extrabold">🤝 Cooperativa Hermandad</div>
           <div className="text-[12px] text-emerald-200/80 mt-0.5">Recibo de pago #{recibo.id}</div>
         </div>
 
@@ -123,7 +123,7 @@ export default function ReciboPage() {
           </div>
           {recibo.clienteCedula && (
             <div className="flex justify-between text-[13px]">
-              <span className="text-slate-500">CÃ©dula</span>
+              <span className="text-slate-500">Cédula</span>
               <span className="font-semibold text-[#0f172a]">{recibo.clienteCedula}</span>
             </div>
           )}
@@ -142,7 +142,7 @@ export default function ReciboPage() {
 
           <div className="border-t border-dashed border-slate-300 pt-4 space-y-1.5">
             <div className="flex justify-between text-[12px] text-slate-500">
-              <span>InterÃ©s</span>
+              <span>Interés</span>
               <span>{fmtMoney(recibo.interesDelCobro)}</span>
             </div>
             <div className="flex justify-between text-[12px] text-slate-500">
@@ -160,7 +160,7 @@ export default function ReciboPage() {
             <span className="font-extrabold text-red-600">{fmtMoney(recibo.saldoCapital)}</span>
           </div>
 
-          <div className="text-center text-[12px] text-slate-400 pt-2">Â¡Gracias por su pago!</div>
+          <div className="text-center text-[12px] text-slate-400 pt-2">¡Gracias por su pago!</div>
         </div>
       </div>
     </div>

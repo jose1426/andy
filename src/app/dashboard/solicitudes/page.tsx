@@ -21,8 +21,8 @@ const ESTADO_LABEL: Record<EstadoSolicitud, string> = {
 function mensajeResultado(s: Solicitud): string {
   const nombreCompleto = `${s.nombre} ${s.apellido ?? ''}`.trim()
   return s.estado === 'aprobada'
-    ? `ðŸŽ‰ Â¡Buenas noticias, ${nombreCompleto}! Tu solicitud de prÃ©stamo${s.monto_solicitado ? ` por ${fmtMoney(s.monto_solicitado)}` : ''} ha sido *aprobada*. Pronto nos pondremos en contacto contigo para los siguientes pasos.`
-    : `Hola ${nombreCompleto}, gracias por tu interÃ©s. Lamentamos informarte que tu solicitud de prÃ©stamo no fue aprobada en esta ocasiÃ³n.`
+    ? `🎉 ¡Buenas noticias, ${nombreCompleto}! Tu solicitud de préstamo${s.monto_solicitado ? ` por ${fmtMoney(s.monto_solicitado)}` : ''} ha sido *aprobada*. Pronto nos pondremos en contacto contigo para los siguientes pasos.`
+    : `Hola ${nombreCompleto}, gracias por tu interés. Lamentamos informarte que tu solicitud de préstamo no fue aprobada en esta ocasión.`
 }
 
 function linkWhatsappResultado(s: Solicitud): string {
@@ -34,11 +34,11 @@ function mensajeAprobacionConTerminos(s: Solicitud, monto: number, tasa: number,
   const nombreCompleto = `${s.nombre} ${s.apellido ?? ''}`.trim()
   const periodo = PERIODO_LABEL[frecuencia]
   const cuota = Math.round(monto * (tasa / 100) * 100) / 100
-  return `ðŸŽ‰ Â¡Buenas noticias, ${nombreCompleto}! Tu solicitud de prÃ©stamo fue *aprobada* con estos tÃ©rminos:\n\n` +
-    `ðŸ’° Monto: ${fmtMoney(monto)}\n` +
-    `ðŸ“ˆ InterÃ©s: ${tasa}% por ${periodo}\n` +
-    `ðŸ’µ Cuota estimada cada ${periodo}: ${fmtMoney(cuota)}\n\n` +
-    `Â¿EstÃ¡s de acuerdo con estas condiciones? RespÃ³ndenos para continuar. ðŸ™Œ`
+  return `🎉 ¡Buenas noticias, ${nombreCompleto}! Tu solicitud de préstamo fue *aprobada* con estos términos:\n\n` +
+    `💰 Monto: ${fmtMoney(monto)}\n` +
+    `📈 Interés: ${tasa}% por ${periodo}\n` +
+    `💵 Cuota estimada cada ${periodo}: ${fmtMoney(cuota)}\n\n` +
+    `¿Estás de acuerdo con estas condiciones? Respóndenos para continuar. 🙌`
 }
 
 export default function SolicitudesPage() {
@@ -72,8 +72,8 @@ export default function SolicitudesPage() {
     if (!s) return
     const monto = parseFloat(montoForm)
     const tasa = parseFloat(tasaForm)
-    if (!monto || monto <= 0) { toast.error('Ingrese un monto vÃ¡lido.'); return }
-    if (!tasa || tasa <= 0) { toast.error('Ingrese una tasa de interÃ©s vÃ¡lida.'); return }
+    if (!monto || monto <= 0) { toast.error('Ingrese un monto válido.'); return }
+    if (!tasa || tasa <= 0) { toast.error('Ingrese una tasa de interés válida.'); return }
 
     setProcesando(s.id)
     try {
@@ -93,7 +93,7 @@ export default function SolicitudesPage() {
         window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank', 'noopener,noreferrer')
       }
 
-      toast.success('Cliente creado. Ya puedes crear su prÃ©stamo con estos mismos tÃ©rminos.')
+      toast.success('Cliente creado. Ya puedes crear su préstamo con estos mismos términos.')
       setAprobando(null)
       load()
     } catch (e: any) {
@@ -118,21 +118,21 @@ export default function SolicitudesPage() {
   return (
     <div className="space-y-4 animate-fadeIn">
       <div>
-        <h1 className="text-2xl font-bold text-[#0f172a]">Solicitudes de PrÃ©stamo</h1>
+        <h1 className="text-2xl font-bold text-[#0f172a]">Solicitudes de Préstamo</h1>
         <p className="text-[14px] text-slate-500 mt-0.5">
-          {pendientes.length} pendiente{pendientes.length !== 1 ? 's' : ''} Â· comparte{' '}
+          {pendientes.length} pendiente{pendientes.length !== 1 ? 's' : ''} · comparte{' '}
           <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[12px]">/solicitar</code> con tus clientes
         </p>
       </div>
 
       <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
         <div className="px-5 py-3 bg-gradient-to-r from-[#0f172a] to-[#059669] text-white font-bold text-[14px]">
-          â³ Pendientes de revisiÃ³n
+          ⏳ Pendientes de revisión
         </div>
         {loading ? (
-          <div className="py-10 text-center text-slate-400 text-[13px]">Cargandoâ€¦</div>
+          <div className="py-10 text-center text-slate-400 text-[13px]">Cargando…</div>
         ) : pendientes.length === 0 ? (
-          <div className="py-10 text-center text-slate-400 text-[13px]">Sin solicitudes pendientes ðŸŽ‰</div>
+          <div className="py-10 text-center text-slate-400 text-[13px]">Sin solicitudes pendientes 🎉</div>
         ) : (
           <div className="divide-y divide-[#f1f5f9]">
             {pendientes.map(s => (
@@ -140,8 +140,8 @@ export default function SolicitudesPage() {
                 <div>
                   <div className="font-bold text-[#0f172a] text-[14px]">{s.nombre} {s.apellido}</div>
                   <div className="text-[12px] text-slate-500 mt-0.5">
-                    {s.cedula || 'Sin cÃ©dula'} Â· {s.telefono || 'Sin telÃ©fono'}
-                    {s.monto_solicitado ? ` Â· Solicita ${fmtMoney(s.monto_solicitado)}` : ''}
+                    {s.cedula || 'Sin cédula'} · {s.telefono || 'Sin teléfono'}
+                    {s.monto_solicitado ? ` · Solicita ${fmtMoney(s.monto_solicitado)}` : ''}
                   </div>
                   {s.referencia && <div className="text-[12px] text-slate-400 mt-0.5">Referencia: {s.referencia}</div>}
                   <div className="text-[11px] text-slate-400 mt-0.5">{fmtFecha(s.created_at.slice(0, 10))}</div>
@@ -149,11 +149,11 @@ export default function SolicitudesPage() {
                 <div className="flex items-center gap-2">
                   <button onClick={() => rechazar(s)} disabled={procesando === s.id}
                     className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-[12px] font-bold disabled:opacity-60">
-                    âŒ Rechazar
+                    ❌ Rechazar
                   </button>
                   <button onClick={() => abrirAprobar(s)} disabled={procesando === s.id}
                     className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold disabled:opacity-60">
-                    {procesando === s.id ? 'â³ Procesandoâ€¦' : 'âœ… Aprobar'}
+                    {procesando === s.id ? '⏳ Procesando…' : '✅ Aprobar'}
                   </button>
                 </div>
               </div>
@@ -170,8 +170,8 @@ export default function SolicitudesPage() {
               {resueltas.map(s => (
                 <tr key={s.id} className="border-b border-[#f1f5f9] last:border-0">
                   <td className="px-5 py-2.5 font-semibold text-[#0f172a]">{s.nombre} {s.apellido}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{s.telefono || 'â€”'}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{s.monto_solicitado ? fmtMoney(s.monto_solicitado) : 'â€”'}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{s.telefono || '—'}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{s.monto_solicitado ? fmtMoney(s.monto_solicitado) : '—'}</td>
                   <td className="px-4 py-2.5 text-center">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${ESTADO_STYLE[s.estado]}`}>
                       {ESTADO_LABEL[s.estado]}
@@ -181,10 +181,10 @@ export default function SolicitudesPage() {
                     <div className="flex items-center justify-center gap-3">
                       {s.telefono && (
                         <a href={linkWhatsappResultado(s)} target="_blank" rel="noopener noreferrer"
-                          className="text-emerald-600 hover:underline text-[12px] font-semibold">ðŸ’¬ Notificar</a>
+                          className="text-emerald-600 hover:underline text-[12px] font-semibold">💬 Notificar</a>
                       )}
                       {s.cliente_id && (
-                        <Link href={`/dashboard/clientes`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">Ver clientes â†’</Link>
+                        <Link href={`/dashboard/clientes`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">Ver clientes →</Link>
                       )}
                     </div>
                   </td>
@@ -199,12 +199,12 @@ export default function SolicitudesPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={e => e.target === e.currentTarget && setAprobando(null)}>
           <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-slideUp">
             <div className="bg-gradient-to-r from-[#0f172a] to-[#059669] px-6 py-4 flex items-center justify-between">
-              <span className="text-white font-bold text-[15px]">âœ… Aprobar solicitud â€” {aprobando.nombre} {aprobando.apellido}</span>
-              <button onClick={() => setAprobando(null)} className="text-white/80 hover:text-white text-lg font-bold">âœ•</button>
+              <span className="text-white font-bold text-[15px]">✅ Aprobar solicitud — {aprobando.nombre} {aprobando.apellido}</span>
+              <button onClick={() => setAprobando(null)} className="text-white/80 hover:text-white text-lg font-bold">✕</button>
             </div>
             <div className="p-6 space-y-3">
               <p className="text-[12px] text-slate-500">
-                Define los tÃ©rminos para notificarle al cliente por WhatsApp antes de crear el prÃ©stamo.
+                Define los términos para notificarle al cliente por WhatsApp antes de crear el préstamo.
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -213,7 +213,7 @@ export default function SolicitudesPage() {
                     className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Tasa de interÃ©s (% por periodo)</label>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Tasa de interés (% por periodo)</label>
                   <input type="text" inputMode="decimal" value={tasaForm} onChange={e => setTasaForm(soloDecimal(e.target.value))}
                     className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
                 </div>
@@ -238,7 +238,7 @@ export default function SolicitudesPage() {
                 <button onClick={() => setAprobando(null)} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
                 <button onClick={confirmarAprobar} disabled={procesando === aprobando.id}
                   className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold disabled:opacity-60">
-                  {procesando === aprobando.id ? 'â³ Procesandoâ€¦' : 'âœ… Aprobar y notificar'}
+                  {procesando === aprobando.id ? '⏳ Procesando…' : '✅ Aprobar y notificar'}
                 </button>
               </div>
             </div>
