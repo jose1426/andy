@@ -31,6 +31,7 @@ export default function PrestamoDetallePage() {
   const [modal, setModal] = useState(false)
   const [cuotaSel, setCuotaSel] = useState<Cuota | null>(null)
   const [montoPago, setMontoPago] = useState('')
+  const [fechaPago, setFechaPago] = useState('')
   const [saving, setSaving] = useState(false)
 
   const [modalDesem, setModalDesem] = useState(false)
@@ -62,9 +63,10 @@ export default function PrestamoDetallePage() {
   const abrirPago = (c: Cuota) => {
     setCuotaSel(c)
     setMontoPago(String((c.monto_cuota - c.monto_pagado).toFixed(2)))
+    setFechaPago(new Date().toISOString().slice(0, 10))
     setModal(true)
   }
-  const cerrarModal = () => { setModal(false); setCuotaSel(null); setMontoPago('') }
+  const cerrarModal = () => { setModal(false); setCuotaSel(null); setMontoPago(''); setFechaPago('') }
 
   const registrarPago = async () => {
     if (!cuotaSel || !prestamo) return
@@ -85,7 +87,7 @@ export default function PrestamoDetallePage() {
       const nuevoEstadoCuota = nuevoMontoPagado >= cuotaSel.monto_cuota - 0.001 ? 'pagada' : 'parcial'
 
       const { error: errPago } = await supabase.from('pagos').insert({
-        cuota_id: cuotaSel.id, prestamo_id: prestamo.id, monto, tipo,
+        cuota_id: cuotaSel.id, prestamo_id: prestamo.id, monto, tipo, fecha: fechaPago,
       })
       if (errPago) throw errPago
 
@@ -309,10 +311,17 @@ export default function PrestamoDetallePage() {
                 <div className="flex justify-between"><span>Ya pagado</span><b>{fmtMoney(cuotaSel.monto_pagado)}</b></div>
                 <div className="flex justify-between text-red-600"><span>Saldo de esta cuota</span><b>{fmtMoney(saldoCuota(cuotaSel))}</b></div>
               </div>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto a pagar</label>
-                <input type="number" step="0.01" min="0" autoFocus value={montoPago} onChange={e => setMontoPago(e.target.value)}
-                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[14px] font-bold outline-none focus:border-emerald-400" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto a pagar</label>
+                  <input type="number" step="0.01" min="0" autoFocus value={montoPago} onChange={e => setMontoPago(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[14px] font-bold outline-none focus:border-emerald-400" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Fecha</label>
+                  <input type="date" value={fechaPago} onChange={e => setFechaPago(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+                </div>
               </div>
               <p className="text-[11px] text-slate-400">Si el monto supera el interés de la cuota, el excedente se abona a capital y reduce el interés de las próximas cuotas.</p>
               <div className="flex justify-end gap-2.5 pt-2">
