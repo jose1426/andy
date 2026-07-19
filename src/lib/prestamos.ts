@@ -35,28 +35,41 @@ export interface CuotaNueva {
   estado: 'pendiente'
 }
 
-/**
- * Genera el plan de cuotas de un préstamo tipo "bala": interés fijo por periodo
- * sobre el capital pendiente (que no baja mientras no haya abonos a capital),
- * con el capital completo venciendo en la última cuota.
- */
-export function generarCuotas(monto: number, tasaInteres: number, frecuencia: Frecuencia, numCuotas: number, fechaInicio: string): CuotaNueva[] {
-  const dias = DIAS_FRECUENCIA[frecuencia]
-  const interesPeriodo = Math.round(monto * (tasaInteres / 100) * 100) / 100
-  const cuotas: CuotaNueva[] = []
-  for (let i = 1; i <= numCuotas; i++) {
-    const esUltima = i === numCuotas
-    const capital = esUltima ? monto : 0
-    cuotas.push({
-      numero: i,
-      fecha_vencimiento: addDias(fechaInicio, dias * i),
-      capital,
-      interes: interesPeriodo,
-      monto_cuota: interesPeriodo + capital,
-      monto_pagado: 0,
-      saldo_capital: monto,
-      estado: 'pendiente',
-    })
+function cuota(numero: number, fechaVencimiento: string, saldoCapital: number, tasaInteres: number): CuotaNueva {
+  const interes = Math.round(saldoCapital * (tasaInteres / 100) * 100) / 100
+  return {
+    numero, fecha_vencimiento: fechaVencimiento, capital: 0, interes,
+    monto_cuota: interes, monto_pagado: 0, saldo_capital: saldoCapital, estado: 'pendiente',
   }
-  return cuotas
+}
+
+/** Primera cuota al crear el préstamo: interés sobre el capital inicial. */
+export function primeraCuota(monto: number, tasaInteres: number, frecuencia: Frecuencia, fechaInicio: string): CuotaNueva {
+  return cuota(1, addDias(fechaInicio, DIAS_FRECUENCIA[frecuencia]), monto, tasaInteres)
+}
+
+/**
+ * Genera las cuotas que falten hasta hoy (una por cada periodo vencido desde
+ * la última cuota existente), con interés sobre el saldo de capital vigente.
+ * El préstamo no tiene plazo fijo: sigue sumando cuotas cada periodo hasta
+ * que el cliente cancele el capital con abonos.
+ */
+export function cuotasFaltantesHastaHoy(
+  frecuencia: Frecuencia, tasaInteres: number, saldoCapital: number,
+  ultimoNumero: number, ultimaFechaVencimiento: string,
+): CuotaNueva[] {
+  if (saldoCapital <= 0) return []
+  const dias = DIAS_FRECUENCIA[frecuencia]
+  const hoy = new Date().toISOString().slice(0, 10)
+  const nuevas: CuotaNueva[] = []
+  let numero = ultimoNumero
+  let fecha = ultimaFechaVencimiento
+  while (true) {
+    const siguiente = addDias(fecha, dias)
+    if (siguiente > hoy) break
+    numero += 1
+    fecha = siguiente
+    nuevas.push(cuota(numero, fecha, saldoCapital, tasaInteres))
+  }
+  return nuevas
 }

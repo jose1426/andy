@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, generarCuotas, FRECUENCIA_LABEL } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, primeraCuota, FRECUENCIA_LABEL } from '@/lib/prestamos'
 import type { Cliente, Prestamo, Frecuencia } from '@/types'
 
 const ESTADO_STYLE: Record<string, string> = {
@@ -20,7 +20,7 @@ const ESTADO_LABEL: Record<string, string> = {
 function emptyForm() {
   return {
     cliente_id: '', monto: '', tasa_interes: '', frecuencia: 'quincenal' as Frecuencia,
-    num_cuotas: '4', fecha_inicio: new Date().toISOString().slice(0, 10), notas: '',
+    fecha_inicio: new Date().toISOString().slice(0, 10), notas: '',
   }
 }
 
@@ -59,29 +59,25 @@ export default function PrestamosPage() {
   const save = async () => {
     const monto = parseFloat(form.monto)
     const tasa = parseFloat(form.tasa_interes)
-    const numCuotas = parseInt(form.num_cuotas)
     if (!form.cliente_id) { toast.error('Seleccione un cliente.'); return }
     if (!monto || monto <= 0) { toast.error('Ingrese un monto válido.'); return }
     if (!tasa || tasa <= 0) { toast.error('Ingrese una tasa de interés válida.'); return }
-    if (!numCuotas || numCuotas <= 0) { toast.error('Ingrese el número de cuotas.'); return }
 
     setSaving(true)
     try {
       const { data: prestamo, error } = await supabase.from('prestamos_prestamos').insert({
         cliente_id: parseInt(form.cliente_id),
         monto, tasa_interes: tasa, frecuencia: form.frecuencia,
-        num_cuotas: numCuotas, fecha_inicio: form.fecha_inicio,
+        fecha_inicio: form.fecha_inicio,
         notas: form.notas || null, estado: 'activo',
       }).select().single()
       if (error) throw error
 
-      const cuotas = generarCuotas(monto, tasa, form.frecuencia, numCuotas, form.fecha_inicio)
-      const { error: errCuotas } = await supabase.from('prestamos_cuotas').insert(
-        cuotas.map(c => ({ ...c, prestamo_id: prestamo.id }))
-      )
+      const c1 = primeraCuota(monto, tasa, form.frecuencia, form.fecha_inicio)
+      const { error: errCuotas } = await supabase.from('prestamos_cuotas').insert({ ...c1, prestamo_id: prestamo.id })
       if (errCuotas) throw errCuotas
 
-      toast.success('Préstamo creado con su plan de cuotas.')
+      toast.success('Préstamo creado. La próxima cuota se suma cada periodo.')
       closeModal()
       load()
     } catch (e: any) {
@@ -196,15 +192,10 @@ export default function PrestamosPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1"># de cuotas</label>
-                  <input type="number" min="1" value={form.num_cuotas} onChange={e => f('num_cuotas', e.target.value)}
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Fecha de inicio</label>
+                  <input type="date" value={form.fecha_inicio} onChange={e => f('fecha_inicio', e.target.value)}
                     className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
                 </div>
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Fecha de inicio</label>
-                <input type="date" value={form.fecha_inicio} onChange={e => f('fecha_inicio', e.target.value)}
-                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
               </div>
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 mb-1">Notas (opcional)</label>
@@ -214,7 +205,7 @@ export default function PrestamosPage() {
 
               {interesPeriodo > 0 && (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-[12px] text-emerald-800">
-                  Interés estimado por periodo: <b>{fmtMoney(interesPeriodo)}</b> — el capital de {fmtMoney(parseFloat(form.monto) || 0)} vence completo en la última cuota.
+                  Interés por periodo: <b>{fmtMoney(interesPeriodo)}</b>. Se genera una cuota nueva cada {form.frecuencia === 'quincenal' ? 'quincena' : form.frecuencia === 'semanal' ? 'semana' : 'mes'} hasta que se cancele el capital con abonos.
                 </div>
               )}
 
