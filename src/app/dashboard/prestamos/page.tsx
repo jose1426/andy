@@ -91,6 +91,10 @@ export default function PrestamosPage() {
     ? (parseFloat(form.monto) * (parseFloat(form.tasa_interes) / 100)) || 0
     : 0
 
+  const prestamoActivoCliente = form.cliente_id
+    ? prestamos.find(p => p.cliente_id === parseInt(form.cliente_id) && (p.estado === 'activo' || p.estado === 'en_mora'))
+    : null
+
   return (
     <div className="space-y-4 animate-fadeIn">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -169,6 +173,18 @@ export default function PrestamosPage() {
                   {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre} {c.apellido} {c.cedula ? `(${c.cedula})` : ''}</option>)}
                 </select>
               </div>
+
+              {prestamoActivoCliente && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-[12px] text-amber-800">
+                  Este cliente ya tiene un préstamo {ESTADO_LABEL[prestamoActivoCliente.estado].toLowerCase()} de {fmtMoney(prestamoActivoCliente.monto)}.
+                  Si es un préstamo adicional, mejor{' '}
+                  <Link href={`/dashboard/prestamos/${prestamoActivoCliente.id}`} className="font-bold underline" onClick={closeModal}>
+                    súmalo ahí con &quot;Prestar más&quot;
+                  </Link>{' '}
+                  para mantener un solo saldo con su rastro de desembolsos.
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto prestado</label>

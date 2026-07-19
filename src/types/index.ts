@@ -54,3 +54,12 @@ export interface Pago {
   notas: string | null
   created_at: string
 }
+
+export interface Desembolso {
+  id: number
+  prestamo_id: number
+  monto: number
+  fecha: string
+  notas: string | null
+  created_at: string
+}

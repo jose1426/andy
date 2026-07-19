@@ -10,7 +10,7 @@ function saldoCapitalDe(monto: number, cuotasList: { monto_pagado: number; inter
   const capitalPagado = cuotasList.reduce((s, c) => s + Math.max(0, c.monto_pagado - c.interes), 0)
   return Math.max(0, Math.round((monto - capitalPagado) * 100) / 100)
 }
-import type { Cliente, Prestamo, Cuota, Pago } from '@/types'
+import type { Cliente, Prestamo, Cuota, Pago, Desembolso } from '@/types'
 
 const ESTADO_CUOTA_STYLE: Record<string, string> = {
   pendiente: 'bg-slate-100 text-slate-600 border-slate-300',
@@ -29,6 +29,7 @@ export default function PrestamoDetallePage() {
   const [prestamo, setPrestamo] = useState<(Prestamo & { cliente: Cliente }) | null>(null)
   const [cuotas, setCuotas] = useState<Cuota[]>([])
   const [pagos, setPagos] = useState<Pago[]>([])
+  const [desembolsos, setDesembolsos] = useState<Desembolso[]>([])
   const [loading, setLoading] = useState(true)
 
   const [modal, setModal] = useState(false)
@@ -36,12 +37,18 @@ export default function PrestamoDetallePage() {
   const [montoPago, setMontoPago] = useState('')
   const [saving, setSaving] = useState(false)
 
+  const [modalDesem, setModalDesem] = useState(false)
+  const [montoDesem, setMontoDesem] = useState('')
+  const [notasDesem, setNotasDesem] = useState('')
+  const [savingDesem, setSavingDesem] = useState(false)
+
   const load = useCallback(async () => {
     setLoading(true)
-    const [presRes, cuotasRes, pagosRes] = await Promise.all([
+    const [presRes, cuotasRes, pagosRes, desemRes] = await Promise.all([
       supabase.from('prestamos_prestamos').select('*, cliente:prestamos_clientes(*)').eq('id', id).single(),
       supabase.from('prestamos_cuotas').select('*').eq('prestamo_id', id).order('numero'),
       supabase.from('prestamos_pagos').select('*').eq('prestamo_id', id).order('fecha', { ascending: false }),
+      supabase.from('prestamos_desembolsos').select('*').eq('prestamo_id', id).order('fecha', { ascending: false }),
     ])
     setLoading(false)
     if (presRes.error) { toast.error('Préstamo no encontrado.'); router.replace('/dashboard/prestamos'); return }
@@ -49,6 +56,7 @@ export default function PrestamoDetallePage() {
     const prestamoData = presRes.data as any
     let cuotasList = (cuotasRes.data || []) as Cuota[]
     setPagos((pagosRes.data || []) as Pago[])
+    setDesembolsos((desemRes.data || []) as Desembolso[])
 
     const hoy = new Date().toISOString().slice(0, 10)
     let cambios = false
@@ -162,6 +170,50 @@ export default function PrestamoDetallePage() {
     }
   }
 
+  const abrirDesembolso = () => { setMontoDesem(''); setNotasDesem(''); setModalDesem(true) }
+  const cerrarDesembolso = () => setModalDesem(false)
+
+  const registrarDesembolso = async () => {
+    if (!prestamo) return
+    const monto = parseFloat(montoDesem)
+    if (!monto || monto <= 0) { toast.error('Ingrese un monto válido.'); return }
+
+    setSavingDesem(true)
+    try {
+      const { error: errDesem } = await supabase.from('prestamos_desembolsos').insert({
+        prestamo_id: prestamo.id, monto, notas: notasDesem || null,
+      })
+      if (errDesem) throw errDesem
+
+      const nuevoMontoTotal = Math.round((prestamo.monto + monto) * 100) / 100
+      const { error: errMonto } = await supabase.from('prestamos_prestamos')
+        .update({ monto: nuevoMontoTotal, estado: prestamo.estado === 'pagado' ? 'activo' : prestamo.estado })
+        .eq('id', prestamo.id)
+      if (errMonto) throw errMonto
+
+      // Recalcular interés de las cuotas futuras (pendientes/atrasadas) sobre el nuevo saldo,
+      // que ahora incluye el capital recién desembolsado.
+      const capitalPagadoTotal = cuotas.reduce((s, c) => s + Math.max(0, c.monto_pagado - c.interes), 0)
+      const nuevoSaldo = Math.max(0, Math.round((nuevoMontoTotal - capitalPagadoTotal) * 100) / 100)
+      const tasa = prestamo.tasa_interes / 100
+      const futuras = cuotas.filter(c => c.estado === 'pendiente' || c.estado === 'atrasada')
+      for (const c of futuras) {
+        const nuevoInteres = Math.round(nuevoSaldo * tasa * 100) / 100
+        await supabase.from('prestamos_cuotas').update({
+          interes: nuevoInteres, capital: 0, monto_cuota: nuevoInteres, saldo_capital: nuevoSaldo,
+        }).eq('id', c.id)
+      }
+
+      toast.success('Desembolso registrado y sumado al préstamo.')
+      cerrarDesembolso()
+      load()
+    } catch (e: any) {
+      toast.error('Error: ' + e.message)
+    } finally {
+      setSavingDesem(false)
+    }
+  }
+
   if (loading || !prestamo) {
     return <div className="py-20 text-center text-slate-400">Cargando…</div>
   }
@@ -173,9 +225,14 @@ export default function PrestamoDetallePage() {
 
   return (
     <div className="space-y-4 animate-fadeIn">
-      <button onClick={() => router.push('/dashboard/prestamos')} className="text-[13px] text-slate-500 hover:text-slate-700 flex items-center gap-1">
-        ← Volver a Préstamos
-      </button>
+      <div className="flex items-center justify-between">
+        <button onClick={() => router.push('/dashboard/prestamos')} className="text-[13px] text-slate-500 hover:text-slate-700 flex items-center gap-1">
+          ← Volver a Préstamos
+        </button>
+        <button onClick={abrirDesembolso} className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold">
+          ➕ Prestar más (sumar a este préstamo)
+        </button>
+      </div>
 
       <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
         <div className="px-6 py-5 bg-gradient-to-r from-[#0f172a] to-[#059669] text-white flex items-center justify-between flex-wrap gap-3">
@@ -249,6 +306,22 @@ export default function PrestamoDetallePage() {
       </div>
 
       <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
+        <div className="text-[14px] font-bold text-[#0f172a] mb-3">Historial de desembolsos (préstamos sumados)</div>
+        {desembolsos.length === 0 ? (
+          <div className="text-[13px] text-slate-400 py-4 text-center">Sin desembolsos registrados.</div>
+        ) : (
+          <div className="space-y-2">
+            {desembolsos.map(d => (
+              <div key={d.id} className="flex items-center justify-between text-[13px] border-b border-[#f1f5f9] pb-2 last:border-0">
+                <span className="text-slate-500">{fmtFecha(d.fecha)}{d.notas ? ` · ${d.notas}` : ''}</span>
+                <span className="font-bold text-[#0f172a]">{fmtMoney(d.monto)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
         <div className="text-[14px] font-bold text-[#0f172a] mb-3">Historial de pagos</div>
         {pagos.length === 0 ? (
           <div className="text-[13px] text-slate-400 py-4 text-center">Sin pagos registrados aún.</div>
@@ -287,6 +360,36 @@ export default function PrestamoDetallePage() {
                 <button onClick={cerrarModal} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
                 <button onClick={registrarPago} disabled={saving} className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold disabled:opacity-60">
                   {saving ? '⏳ Guardando…' : '💾 Registrar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalDesem && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={e => e.target === e.currentTarget && cerrarDesembolso()}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-slideUp">
+            <div className="bg-gradient-to-r from-[#0f172a] to-[#059669] px-6 py-4 flex items-center justify-between">
+              <span className="text-white font-bold text-[15px]">➕ Prestar más</span>
+              <button onClick={cerrarDesembolso} className="text-white/80 hover:text-white text-lg font-bold">✕</button>
+            </div>
+            <div className="p-6 space-y-3">
+              <p className="text-[12px] text-slate-500">El monto se suma al capital de este préstamo y queda registrado en el historial de desembolsos, sin crear un préstamo aparte.</p>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto adicional</label>
+                <input type="number" step="0.01" min="0" autoFocus value={montoDesem} onChange={e => setMontoDesem(e.target.value)}
+                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[14px] font-bold outline-none focus:border-emerald-400" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Nota (opcional)</label>
+                <input value={notasDesem} onChange={e => setNotasDesem(e.target.value)}
+                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+              </div>
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button onClick={cerrarDesembolso} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
+                <button onClick={registrarDesembolso} disabled={savingDesem} className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold disabled:opacity-60">
+                  {savingDesem ? '⏳ Guardando…' : '💾 Registrar'}
                 </button>
               </div>
             </div>
