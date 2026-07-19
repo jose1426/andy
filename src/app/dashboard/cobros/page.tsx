@@ -43,12 +43,12 @@ export default function CobrosPage() {
   const load = useCallback(async () => {
     setLoading(true)
     const [cuotasRes, pagosRes] = await Promise.all([
-      supabase.from('prestamos_cuotas')
-        .select('*, prestamo:prestamos_prestamos(id,monto,tasa_interes,cliente:prestamos_clientes(nombre,apellido,cedula))')
+      supabase.from('cuotas')
+        .select('*, prestamo:prestamos(id,monto,tasa_interes,cliente:clientes(nombre,apellido,cedula))')
         .in('estado', ['pendiente', 'atrasada', 'parcial'])
         .order('fecha_vencimiento'),
-      supabase.from('prestamos_pagos')
-        .select('id,monto,fecha,tipo,cuota:prestamos_cuotas(numero,prestamo:prestamos_prestamos(id,cliente:prestamos_clientes(nombre,apellido)))')
+      supabase.from('pagos')
+        .select('id,monto,fecha,tipo,cuota:cuotas(numero,prestamo:prestamos(id,cliente:clientes(nombre,apellido)))')
         .order('created_at', { ascending: false })
         .limit(20),
     ])
@@ -68,7 +68,7 @@ export default function CobrosPage() {
   const abrirPago = async (c: CuotaRow) => {
     setCuotaSel(c)
     setMontoPago(String((c.monto_cuota - c.monto_pagado).toFixed(2)))
-    const { data } = await supabase.from('prestamos_cuotas').select('*').eq('prestamo_id', c.prestamo.id).order('numero')
+    const { data } = await supabase.from('cuotas').select('*').eq('prestamo_id', c.prestamo.id).order('numero')
     setCuotasPrestamo((data || []) as Cuota[])
     setModal(true)
   }
@@ -91,12 +91,12 @@ export default function CobrosPage() {
       const tipo = abonoCapital > 0 && abonoInteres > 0 ? 'mixto' : abonoCapital > 0 ? 'capital' : 'interes'
       const nuevoEstadoCuota = nuevoMontoPagado >= cuotaSel.monto_cuota - 0.001 ? 'pagada' : 'parcial'
 
-      const { error: errPago } = await supabase.from('prestamos_pagos').insert({
+      const { error: errPago } = await supabase.from('pagos').insert({
         cuota_id: cuotaSel.id, prestamo_id: cuotaSel.prestamo.id, monto, tipo,
       })
       if (errPago) throw errPago
 
-      const { error: errCuota } = await supabase.from('prestamos_cuotas')
+      const { error: errCuota } = await supabase.from('cuotas')
         .update({ monto_pagado: nuevoMontoPagado, estado: nuevoEstadoCuota })
         .eq('id', cuotaSel.id)
       if (errCuota) throw errCuota
@@ -111,12 +111,12 @@ export default function CobrosPage() {
 
         for (const c of futuras) {
           const nuevoInteres = Math.round(nuevoSaldo * tasa * 100) / 100
-          await supabase.from('prestamos_cuotas').update({
+          await supabase.from('cuotas').update({
             interes: nuevoInteres, capital: 0, monto_cuota: nuevoInteres, saldo_capital: nuevoSaldo,
           }).eq('id', c.id)
         }
         if (nuevoSaldo <= 0) {
-          await supabase.from('prestamos_prestamos').update({ estado: 'pagado' }).eq('id', cuotaSel.prestamo.id)
+          await supabase.from('prestamos').update({ estado: 'pagado' }).eq('id', cuotaSel.prestamo.id)
         }
       }
 

@@ -45,10 +45,10 @@ export default function PrestamoDetallePage() {
   const load = useCallback(async () => {
     setLoading(true)
     const [presRes, cuotasRes, pagosRes, desemRes] = await Promise.all([
-      supabase.from('prestamos_prestamos').select('*, cliente:prestamos_clientes(*)').eq('id', id).single(),
-      supabase.from('prestamos_cuotas').select('*').eq('prestamo_id', id).order('numero'),
-      supabase.from('prestamos_pagos').select('*').eq('prestamo_id', id).order('fecha', { ascending: false }),
-      supabase.from('prestamos_desembolsos').select('*').eq('prestamo_id', id).order('fecha', { ascending: false }),
+      supabase.from('prestamos').select('*, cliente:clientes(*)').eq('id', id).single(),
+      supabase.from('cuotas').select('*').eq('prestamo_id', id).order('numero'),
+      supabase.from('pagos').select('*').eq('prestamo_id', id).order('fecha', { ascending: false }),
+      supabase.from('desembolsos').select('*').eq('prestamo_id', id).order('fecha', { ascending: false }),
     ])
     setLoading(false)
     if (presRes.error) { toast.error('Préstamo no encontrado.'); router.replace('/dashboard/prestamos'); return }
@@ -65,24 +65,24 @@ export default function PrestamoDetallePage() {
       const saldoActual = saldoCapitalDe(prestamoData.monto, cuotasList)
 
       if (saldoActual <= 0) {
-        await supabase.from('prestamos_prestamos').update({ estado: 'pagado' }).eq('id', id)
+        await supabase.from('prestamos').update({ estado: 'pagado' }).eq('id', id)
         cambios = true
       } else {
         const ultima = cuotasList.reduce((max, c) => c.numero > max.numero ? c : max, cuotasList[0])
         const nuevas = cuotasFaltantesHastaHoy(prestamoData.frecuencia, prestamoData.tasa_interes, saldoActual, ultima.numero, ultima.fecha_vencimiento)
         if (nuevas.length) {
-          await supabase.from('prestamos_cuotas').insert(nuevas.map(c => ({
+          await supabase.from('cuotas').insert(nuevas.map(c => ({
             ...c, prestamo_id: id, estado: c.fecha_vencimiento < hoy ? 'atrasada' : 'pendiente',
           })))
           cambios = true
         }
         const vencidas = cuotasList.filter(c => c.estado === 'pendiente' && c.fecha_vencimiento < hoy)
         if (vencidas.length) {
-          await supabase.from('prestamos_cuotas').update({ estado: 'atrasada' }).in('id', vencidas.map(c => c.id))
+          await supabase.from('cuotas').update({ estado: 'atrasada' }).in('id', vencidas.map(c => c.id))
           cambios = true
         }
         if ((nuevas.some(n => n.fecha_vencimiento < hoy) || vencidas.length) && prestamoData.estado === 'activo') {
-          await supabase.from('prestamos_prestamos').update({ estado: 'en_mora' }).eq('id', id)
+          await supabase.from('prestamos').update({ estado: 'en_mora' }).eq('id', id)
           cambios = true
         }
       }
@@ -90,8 +90,8 @@ export default function PrestamoDetallePage() {
 
     if (cambios) {
       const [cFresh, pFresh] = await Promise.all([
-        supabase.from('prestamos_cuotas').select('*').eq('prestamo_id', id).order('numero'),
-        supabase.from('prestamos_prestamos').select('*, cliente:prestamos_clientes(*)').eq('id', id).single(),
+        supabase.from('cuotas').select('*').eq('prestamo_id', id).order('numero'),
+        supabase.from('prestamos').select('*, cliente:clientes(*)').eq('id', id).single(),
       ])
       cuotasList = (cFresh.data || []) as Cuota[]
       setPrestamo(pFresh.data as any)
@@ -128,12 +128,12 @@ export default function PrestamoDetallePage() {
 
       const nuevoEstadoCuota = nuevoMontoPagado >= cuotaSel.monto_cuota - 0.001 ? 'pagada' : 'parcial'
 
-      const { error: errPago } = await supabase.from('prestamos_pagos').insert({
+      const { error: errPago } = await supabase.from('pagos').insert({
         cuota_id: cuotaSel.id, prestamo_id: prestamo.id, monto, tipo,
       })
       if (errPago) throw errPago
 
-      const { error: errCuota } = await supabase.from('prestamos_cuotas')
+      const { error: errCuota } = await supabase.from('cuotas')
         .update({ monto_pagado: nuevoMontoPagado, estado: nuevoEstadoCuota })
         .eq('id', cuotaSel.id)
       if (errCuota) throw errCuota
@@ -150,13 +150,13 @@ export default function PrestamoDetallePage() {
 
         for (const c of futuras) {
           const nuevoInteres = Math.round(nuevoSaldo * tasa * 100) / 100
-          await supabase.from('prestamos_cuotas').update({
+          await supabase.from('cuotas').update({
             interes: nuevoInteres, capital: 0, monto_cuota: nuevoInteres, saldo_capital: nuevoSaldo,
           }).eq('id', c.id)
         }
 
         if (nuevoSaldo <= 0) {
-          await supabase.from('prestamos_prestamos').update({ estado: 'pagado' }).eq('id', prestamo.id)
+          await supabase.from('prestamos').update({ estado: 'pagado' }).eq('id', prestamo.id)
         }
       }
 
@@ -180,13 +180,13 @@ export default function PrestamoDetallePage() {
 
     setSavingDesem(true)
     try {
-      const { error: errDesem } = await supabase.from('prestamos_desembolsos').insert({
+      const { error: errDesem } = await supabase.from('desembolsos').insert({
         prestamo_id: prestamo.id, monto, notas: notasDesem || null,
       })
       if (errDesem) throw errDesem
 
       const nuevoMontoTotal = Math.round((prestamo.monto + monto) * 100) / 100
-      const { error: errMonto } = await supabase.from('prestamos_prestamos')
+      const { error: errMonto } = await supabase.from('prestamos')
         .update({ monto: nuevoMontoTotal, estado: prestamo.estado === 'pagado' ? 'activo' : prestamo.estado })
         .eq('id', prestamo.id)
       if (errMonto) throw errMonto
@@ -199,7 +199,7 @@ export default function PrestamoDetallePage() {
       const futuras = cuotas.filter(c => c.estado === 'pendiente' || c.estado === 'atrasada')
       for (const c of futuras) {
         const nuevoInteres = Math.round(nuevoSaldo * tasa * 100) / 100
-        await supabase.from('prestamos_cuotas').update({
+        await supabase.from('cuotas').update({
           interes: nuevoInteres, capital: 0, monto_cuota: nuevoInteres, saldo_capital: nuevoSaldo,
         }).eq('id', c.id)
       }

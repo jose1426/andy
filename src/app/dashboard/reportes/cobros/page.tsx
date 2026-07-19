@@ -31,13 +31,13 @@ export default function ReporteCobrosPage() {
   const [fecHas, setFecHas] = useState(HOY)
 
   useEffect(() => {
-    supabase.from('prestamos_clientes').select('*').order('nombre').then(({ data }) => setClientes((data || []) as Cliente[]))
+    supabase.from('clientes').select('*').order('nombre').then(({ data }) => setClientes((data || []) as Cliente[]))
   }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
-    let q = supabase.from('prestamos_pagos')
-      .select('id,monto,fecha,tipo,cuota:prestamos_cuotas(numero,prestamo:prestamos_prestamos(id,cliente_id,cliente:prestamos_clientes(nombre,apellido)))')
+    let q = supabase.from('pagos')
+      .select('id,monto,fecha,tipo,cuota:cuotas(numero,prestamo:prestamos(id,cliente_id,cliente:clientes(nombre,apellido)))')
       .gte('fecha', fecDes)
       .lte('fecha', fecHas)
       .order('fecha', { ascending: false })

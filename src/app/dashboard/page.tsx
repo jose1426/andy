@@ -23,10 +23,10 @@ export default function DashboardHome() {
       const inicioMes = new Date().toISOString().slice(0, 8) + '01'
 
       const [clientesRes, prestamosRes, cuotasRes, pagosMesRes] = await Promise.all([
-        supabase.from('prestamos_clientes').select('id', { count: 'exact', head: true }).eq('activo', true),
-        supabase.from('prestamos_prestamos').select('id,monto,estado').in('estado', ['activo', 'en_mora']),
-        supabase.from('prestamos_cuotas').select('id,fecha_vencimiento,estado').lt('fecha_vencimiento', hoy).in('estado', ['pendiente', 'atrasada']),
-        supabase.from('prestamos_pagos').select('monto').gte('fecha', inicioMes),
+        supabase.from('clientes').select('id', { count: 'exact', head: true }).eq('activo', true),
+        supabase.from('prestamos').select('id,monto,estado').in('estado', ['activo', 'en_mora']),
+        supabase.from('cuotas').select('id,fecha_vencimiento,estado').lt('fecha_vencimiento', hoy).in('estado', ['pendiente', 'atrasada']),
+        supabase.from('pagos').select('monto').gte('fecha', inicioMes),
       ])
 
       const carteraActiva = (prestamosRes.data || []).reduce((s, p: any) => s + Number(p.monto || 0), 0)

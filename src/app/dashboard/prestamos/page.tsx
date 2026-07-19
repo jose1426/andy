@@ -36,8 +36,8 @@ export default function PrestamosPage() {
   const load = useCallback(async () => {
     setLoading(true)
     const [presRes, cliRes] = await Promise.all([
-      supabase.from('prestamos_prestamos').select('*, cliente:prestamos_clientes(*)').order('created_at', { ascending: false }),
-      supabase.from('prestamos_clientes').select('*').eq('activo', true).order('nombre'),
+      supabase.from('prestamos').select('*, cliente:clientes(*)').order('created_at', { ascending: false }),
+      supabase.from('clientes').select('*').eq('activo', true).order('nombre'),
     ])
     setLoading(false)
     if (presRes.error) { toast.error(presRes.error.message); return }
@@ -65,7 +65,7 @@ export default function PrestamosPage() {
 
     setSaving(true)
     try {
-      const { data: prestamo, error } = await supabase.from('prestamos_prestamos').insert({
+      const { data: prestamo, error } = await supabase.from('prestamos').insert({
         cliente_id: parseInt(form.cliente_id),
         monto, tasa_interes: tasa, frecuencia: form.frecuencia,
         fecha_inicio: form.fecha_inicio,
@@ -74,7 +74,7 @@ export default function PrestamosPage() {
       if (error) throw error
 
       const c1 = primeraCuota(monto, tasa, form.frecuencia, form.fecha_inicio)
-      const { error: errCuotas } = await supabase.from('prestamos_cuotas').insert({ ...c1, prestamo_id: prestamo.id })
+      const { error: errCuotas } = await supabase.from('cuotas').insert({ ...c1, prestamo_id: prestamo.id })
       if (errCuotas) throw errCuotas
 
       toast.success('Préstamo creado. La próxima cuota se suma cada periodo.')

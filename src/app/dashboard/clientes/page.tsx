@@ -20,7 +20,7 @@ export default function ClientesPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase.from('prestamos_clientes').select('*').order('nombre')
+    const { data, error } = await supabase.from('clientes').select('*').order('nombre')
     setLoading(false)
     if (error) { toast.error(error.message); return }
     setClientes((data || []) as Cliente[])
@@ -47,11 +47,11 @@ export default function ClientesPage() {
     setSaving(true)
     try {
       if (editRow) {
-        const { error } = await supabase.from('prestamos_clientes').update(form).eq('id', editRow.id)
+        const { error } = await supabase.from('clientes').update(form).eq('id', editRow.id)
         if (error) throw error
         toast.success('Cliente actualizado')
       } else {
-        const { error } = await supabase.from('prestamos_clientes').insert(form)
+        const { error } = await supabase.from('clientes').insert(form)
         if (error) throw error
         toast.success('Cliente creado')
       }
@@ -65,7 +65,7 @@ export default function ClientesPage() {
   }
 
   const toggleActivo = async (c: Cliente) => {
-    const { error } = await supabase.from('prestamos_clientes').update({ activo: !c.activo }).eq('id', c.id)
+    const { error } = await supabase.from('clientes').update({ activo: !c.activo }).eq('id', c.id)
     if (error) { toast.error(error.message); return }
     setClientes(prev => prev.map(x => x.id === c.id ? { ...x, activo: !x.activo } : x))
   }

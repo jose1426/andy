@@ -26,9 +26,9 @@ export default function ReportesPage() {
       const hoy = new Date().toISOString().slice(0, 10)
 
       const [prestamosRes, cuotasRes] = await Promise.all([
-        supabase.from('prestamos_prestamos').select('id,monto,estado'),
-        supabase.from('prestamos_cuotas')
-          .select('id,numero,fecha_vencimiento,monto_cuota,monto_pagado,estado,prestamo_id,prestamos_prestamos(cliente_id,prestamos_clientes(nombre,apellido))')
+        supabase.from('prestamos').select('id,monto,estado'),
+        supabase.from('cuotas')
+          .select('id,numero,fecha_vencimiento,monto_cuota,monto_pagado,estado,prestamo_id,prestamos(cliente_id,clientes(nombre,apellido))')
           .in('estado', ['pendiente', 'atrasada', 'parcial'])
           .order('fecha_vencimiento'),
       ])
@@ -45,7 +45,7 @@ export default function ReportesPage() {
       const toRow = (c: any): CuotaMora => ({
         id: c.id, numero: c.numero, fecha_vencimiento: c.fecha_vencimiento,
         monto_cuota: c.monto_cuota, monto_pagado: c.monto_pagado, prestamo_id: c.prestamo_id,
-        cliente_nombre: `${c.prestamos_prestamos?.prestamos_clientes?.nombre ?? ''} ${c.prestamos_prestamos?.prestamos_clientes?.apellido ?? ''}`.trim(),
+        cliente_nombre: `${c.prestamos?.clientes?.nombre ?? ''} ${c.prestamos?.clientes?.apellido ?? ''}`.trim(),
       })
 
       setMora(cuotas.filter(c => c.fecha_vencimiento < hoy).map(toRow))
