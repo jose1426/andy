@@ -38,7 +38,7 @@ export function LoginPage() {
           <div className="mx-auto mb-3 w-14 h-14 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-2xl">
             💵
           </div>
-          <div className="text-lg font-bold text-white tracking-wide">Sistema de Préstamos</div>
+          <div className="text-lg font-bold text-white tracking-wide">Préstamos Xpress</div>
           <div className="text-xs text-emerald-200/80 mt-1">Clientes · Cuotas · Cobros</div>
         </div>
 
@@ -116,7 +116,7 @@ export function LoginPage() {
         </form>
 
         <div className="px-8 pb-5 text-center text-[11px] text-slate-400">
-          Sistema de Préstamos · Acceso restringido
+          Préstamos Xpress · Acceso restringido
         </div>
       </div>
     </div>

@@ -10,7 +10,7 @@ export function Header() {
     <header className="h-16 flex items-center justify-between px-6 bg-gradient-to-r from-[#0f172a] to-[#0f2e1f] border-b border-black/10 shrink-0">
       <div className="flex items-center gap-2.5">
         <span className="text-xl">💵</span>
-        <span className="text-white font-bold text-[15px] tracking-wide">Sistema de Préstamos</span>
+        <span className="text-white font-bold text-[15px] tracking-wide">Préstamos Xpress</span>
       </div>
       <div className="flex items-center gap-4">
         <div className="text-right hidden sm:block">

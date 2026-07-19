@@ -4,7 +4,7 @@ import { AuthProvider } from '@/context/AuthContext'
 import { Toaster } from '@/components/ui/sonner'
 
 export const metadata: Metadata = {
-  title: 'Sistema de Préstamos',
+  title: 'Préstamos Xpress',
   description: 'Gestión de clientes, préstamos y cobros',
 }
 
