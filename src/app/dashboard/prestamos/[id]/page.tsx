@@ -4,12 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, FRECUENCIA_LABEL, cuotasFaltantesHastaHoy } from '@/lib/prestamos'
-
-function saldoCapitalDe(monto: number, cuotasList: { monto_pagado: number; interes: number }[]) {
-  const capitalPagado = cuotasList.reduce((s, c) => s + Math.max(0, c.monto_pagado - c.interes), 0)
-  return Math.max(0, Math.round((monto - capitalPagado) * 100) / 100)
-}
+import { fmtMoney, fmtFecha, FRECUENCIA_LABEL, reconciliarPrestamosVencidos } from '@/lib/prestamos'
 import type { Cliente, Prestamo, Cuota, Pago, Desembolso } from '@/types'
 
 const ESTADO_CUOTA_STYLE: Record<string, string> = {
@@ -17,9 +12,10 @@ const ESTADO_CUOTA_STYLE: Record<string, string> = {
   pagada: 'bg-emerald-100 text-emerald-800 border-emerald-300',
   parcial: 'bg-amber-100 text-amber-800 border-amber-300',
   atrasada: 'bg-red-100 text-red-800 border-red-300',
+  capitalizada: 'bg-purple-100 text-purple-800 border-purple-300',
 }
 const ESTADO_CUOTA_LABEL: Record<string, string> = {
-  pendiente: 'Pendiente', pagada: 'Pagada', parcial: 'Parcial', atrasada: 'Atrasada',
+  pendiente: 'Pendiente', pagada: 'Pagada', parcial: 'Parcial', atrasada: 'Atrasada', capitalizada: 'Capitalizada',
 }
 
 export default function PrestamoDetallePage() {
@@ -44,6 +40,8 @@ export default function PrestamoDetallePage() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    await reconciliarPrestamosVencidos(supabase, Number(id))
+
     const [presRes, cuotasRes, pagosRes, desemRes] = await Promise.all([
       supabase.from('prestamos').select('*, cliente:clientes(*)').eq('id', id).single(),
       supabase.from('cuotas').select('*').eq('prestamo_id', id).order('numero'),
@@ -53,52 +51,10 @@ export default function PrestamoDetallePage() {
     setLoading(false)
     if (presRes.error) { toast.error('Préstamo no encontrado.'); router.replace('/dashboard/prestamos'); return }
 
-    const prestamoData = presRes.data as any
-    let cuotasList = (cuotasRes.data || []) as Cuota[]
+    setPrestamo(presRes.data as any)
+    setCuotas((cuotasRes.data || []) as Cuota[])
     setPagos((pagosRes.data || []) as Pago[])
     setDesembolsos((desemRes.data || []) as Desembolso[])
-
-    const hoy = new Date().toISOString().slice(0, 10)
-    let cambios = false
-
-    if (prestamoData.estado !== 'pagado' && cuotasList.length) {
-      const saldoActual = saldoCapitalDe(prestamoData.monto, cuotasList)
-
-      if (saldoActual <= 0) {
-        await supabase.from('prestamos').update({ estado: 'pagado' }).eq('id', id)
-        cambios = true
-      } else {
-        const ultima = cuotasList.reduce((max, c) => c.numero > max.numero ? c : max, cuotasList[0])
-        const nuevas = cuotasFaltantesHastaHoy(prestamoData.frecuencia, prestamoData.tasa_interes, saldoActual, ultima.numero, ultima.fecha_vencimiento)
-        if (nuevas.length) {
-          await supabase.from('cuotas').insert(nuevas.map(c => ({
-            ...c, prestamo_id: id, estado: c.fecha_vencimiento < hoy ? 'atrasada' : 'pendiente',
-          })))
-          cambios = true
-        }
-        const vencidas = cuotasList.filter(c => c.estado === 'pendiente' && c.fecha_vencimiento < hoy)
-        if (vencidas.length) {
-          await supabase.from('cuotas').update({ estado: 'atrasada' }).in('id', vencidas.map(c => c.id))
-          cambios = true
-        }
-        if ((nuevas.some(n => n.fecha_vencimiento < hoy) || vencidas.length) && prestamoData.estado === 'activo') {
-          await supabase.from('prestamos').update({ estado: 'en_mora' }).eq('id', id)
-          cambios = true
-        }
-      }
-    }
-
-    if (cambios) {
-      const [cFresh, pFresh] = await Promise.all([
-        supabase.from('cuotas').select('*').eq('prestamo_id', id).order('numero'),
-        supabase.from('prestamos').select('*, cliente:clientes(*)').eq('id', id).single(),
-      ])
-      cuotasList = (cFresh.data || []) as Cuota[]
-      setPrestamo(pFresh.data as any)
-    } else {
-      setPrestamo(prestamoData)
-    }
-    setCuotas(cuotasList)
   }, [id, router])
 
   useEffect(() => { load() }, [load])
@@ -220,8 +176,11 @@ export default function PrestamoDetallePage() {
 
   const totalCuota = (c: Cuota) => c.monto_cuota
   const saldoCuota = (c: Cuota) => Math.max(0, c.monto_cuota - c.monto_pagado)
-  const totalPagado = cuotas.reduce((s, c) => s + c.monto_pagado, 0)
-  const totalEsperado = cuotas.reduce((s, c) => s + c.monto_cuota, 0)
+  // Las cuotas capitalizadas se excluyen: su saldo ya se sumó al capital y quedó
+  // reflejado en el interés de las cuotas siguientes, contarlas aparte duplicaría el monto.
+  const cuotasVigentes = cuotas.filter(c => c.estado !== 'capitalizada')
+  const totalPagado = cuotasVigentes.reduce((s, c) => s + c.monto_pagado, 0)
+  const totalEsperado = cuotasVigentes.reduce((s, c) => s + c.monto_cuota, 0)
 
   return (
     <div className="space-y-4 animate-fadeIn">
@@ -292,7 +251,7 @@ export default function PrestamoDetallePage() {
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-center">
-                    {c.estado !== 'pagada' && (
+                    {c.estado !== 'pagada' && c.estado !== 'capitalizada' && (
                       <button onClick={() => abrirPago(c)} className="px-3 py-1 rounded-md bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700">
                         💰 Cobrar
                       </button>

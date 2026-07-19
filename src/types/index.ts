@@ -28,7 +28,7 @@ export interface Prestamo {
   cliente?: Cliente
 }
 
-export type EstadoCuota = 'pendiente' | 'pagada' | 'parcial' | 'atrasada'
+export type EstadoCuota = 'pendiente' | 'pagada' | 'parcial' | 'atrasada' | 'capitalizada'
 
 export interface Cuota {
   id: number
