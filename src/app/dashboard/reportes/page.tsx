@@ -56,9 +56,14 @@ export default function ReportesPage() {
 
   return (
     <div className="space-y-6 animate-fadeIn">
-      <div>
-        <h1 className="text-2xl font-bold text-[#0f172a]">Reportes</h1>
-        <p className="text-[14px] text-slate-500 mt-0.5">Cartera, cobros del día y mora</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-[#0f172a]">Reportes</h1>
+          <p className="text-[14px] text-slate-500 mt-0.5">Cartera, cobros del día y mora</p>
+        </div>
+        <Link href="/dashboard/reportes/cobros" className="px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold hover:opacity-90 transition-opacity">
+          📅 Cobros por Cliente y Fecha
+        </Link>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
