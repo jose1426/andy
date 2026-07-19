@@ -8,7 +8,7 @@ import { fmtMoney, fmtFecha, reconciliarPrestamosVencidos } from '@/lib/prestamo
 import type { Cuota } from '@/types'
 
 interface CuotaRow extends Cuota {
-  prestamo: { id: number; monto: number; tasa_interes: number; cliente: { nombre: string; apellido: string | null; cedula: string | null } }
+  prestamo: { id: number; monto: number; tasa_interes: number; fecha_inicio: string; cliente: { nombre: string; apellido: string | null; cedula: string | null } }
 }
 
 interface PagoRow {
@@ -45,7 +45,7 @@ export default function CobrosPage() {
     await reconciliarPrestamosVencidos(supabase)
     const [cuotasRes, pagosRes] = await Promise.all([
       supabase.from('cuotas')
-        .select('*, prestamo:prestamos(id,monto,tasa_interes,cliente:clientes(nombre,apellido,cedula))')
+        .select('*, prestamo:prestamos(id,monto,tasa_interes,fecha_inicio,cliente:clientes(nombre,apellido,cedula))')
         .in('estado', ['pendiente', 'atrasada', 'parcial'])
         .order('fecha_vencimiento'),
       supabase.from('pagos')
@@ -160,6 +160,7 @@ export default function CobrosPage() {
             <thead>
               <tr className="bg-[#f1f5f9] border-b-2 border-[#e2e8f0]">
                 <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">Cliente</th>
+                <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">Inicio Préstamo</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Cuota</th>
                 <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">Vencimiento</th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Saldo</th>
@@ -169,9 +170,9 @@ export default function CobrosPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} className="py-10 text-center text-slate-400">Cargando…</td></tr>
+                <tr><td colSpan={7} className="py-10 text-center text-slate-400">Cargando…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={6} className="py-10 text-center text-slate-400">Sin cuotas pendientes 🎉</td></tr>
+                <tr><td colSpan={7} className="py-10 text-center text-slate-400">Sin cuotas pendientes 🎉</td></tr>
               ) : filtered.map((c, i) => (
                 <tr key={c.id} className={`border-b border-[#f1f5f9] ${i % 2 === 0 ? '' : 'bg-[#f8fafc]'}`}>
                   <td className="px-4 py-2.5">
@@ -179,6 +180,7 @@ export default function CobrosPage() {
                       {c.prestamo.cliente.nombre} {c.prestamo.cliente.apellido}
                     </Link>
                   </td>
+                  <td className="px-4 py-2.5 text-slate-500">{fmtFecha(c.prestamo.fecha_inicio)}</td>
                   <td className="px-4 py-2.5 text-center font-mono text-slate-500">#{c.numero}</td>
                   <td className="px-4 py-2.5">{fmtFecha(c.fecha_vencimiento)}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(saldoCuota(c))}</td>
