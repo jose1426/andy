@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import type { Frecuencia } from '@/types'
 
 export const fmtMoney = (v: number | null | undefined) =>
@@ -72,4 +73,50 @@ export function cuotasFaltantesHastaHoy(
     nuevas.push(cuota(numero, fecha, saldoCapital, tasaInteres))
   }
   return nuevas
+}
+
+/**
+ * Recorre todos los préstamos activos/en mora y les aplica el mismo chequeo que
+ * la pantalla de detalle: genera las cuotas vencidas que falten, marca como
+ * atrasada la que no se pagó a tiempo, y cierra el préstamo si ya no debe capital.
+ * Debe llamarse antes de mostrar listados que crucen varios préstamos (Cobros,
+ * Reportes, Inicio) para que el estado de "atrasada" no dependa de haber
+ * visitado cada préstamo individualmente.
+ */
+export async function reconciliarPrestamosVencidos(supabase: SupabaseClient) {
+  const hoy = new Date().toISOString().slice(0, 10)
+  const { data: prestamosList } = await supabase.from('prestamos')
+    .select('id,monto,tasa_interes,frecuencia,estado')
+    .in('estado', ['activo', 'en_mora'])
+  if (!prestamosList?.length) return
+
+  for (const p of prestamosList as any[]) {
+    const { data: cuotasList } = await supabase.from('cuotas').select('*').eq('prestamo_id', p.id).order('numero')
+    if (!cuotasList?.length) continue
+
+    const capitalPagado = cuotasList.reduce((s: number, c: any) => s + Math.max(0, c.monto_pagado - c.interes), 0)
+    const saldo = Math.max(0, Math.round((p.monto - capitalPagado) * 100) / 100)
+
+    if (saldo <= 0) {
+      await supabase.from('prestamos').update({ estado: 'pagado' }).eq('id', p.id)
+      continue
+    }
+
+    const ultima = cuotasList.reduce((max: any, c: any) => c.numero > max.numero ? c : max, cuotasList[0])
+    const nuevas = cuotasFaltantesHastaHoy(p.frecuencia, p.tasa_interes, saldo, ultima.numero, ultima.fecha_vencimiento)
+    if (nuevas.length) {
+      await supabase.from('cuotas').insert(nuevas.map(c => ({
+        ...c, prestamo_id: p.id, estado: c.fecha_vencimiento < hoy ? 'atrasada' : 'pendiente',
+      })))
+    }
+
+    const vencidas = cuotasList.filter((c: any) => c.estado === 'pendiente' && c.fecha_vencimiento < hoy)
+    if (vencidas.length) {
+      await supabase.from('cuotas').update({ estado: 'atrasada' }).in('id', vencidas.map((c: any) => c.id))
+    }
+
+    if ((nuevas.some(n => n.fecha_vencimiento < hoy) || vencidas.length) && p.estado === 'activo') {
+      await supabase.from('prestamos').update({ estado: 'en_mora' }).eq('id', p.id)
+    }
+  }
 }

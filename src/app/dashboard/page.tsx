@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
-import { fmtMoney } from '@/lib/prestamos'
+import { fmtMoney, reconciliarPrestamosVencidos } from '@/lib/prestamos'
 
 interface Stats {
   totalClientes: number
@@ -21,6 +21,7 @@ export default function DashboardHome() {
     (async () => {
       const hoy = new Date().toISOString().slice(0, 10)
       const inicioMes = new Date().toISOString().slice(0, 8) + '01'
+      await reconciliarPrestamosVencidos(supabase)
 
       const [clientesRes, prestamosRes, cuotasRes, pagosMesRes] = await Promise.all([
         supabase.from('clientes').select('id', { count: 'exact', head: true }).eq('activo', true),

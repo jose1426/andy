@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, reconciliarPrestamosVencidos } from '@/lib/prestamos'
 import type { Cuota } from '@/types'
 
 interface CuotaRow extends Cuota {
@@ -42,6 +42,7 @@ export default function CobrosPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    await reconciliarPrestamosVencidos(supabase)
     const [cuotasRes, pagosRes] = await Promise.all([
       supabase.from('cuotas')
         .select('*, prestamo:prestamos(id,monto,tasa_interes,cliente:clientes(nombre,apellido,cedula))')

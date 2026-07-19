@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
-import { fmtMoney, fmtFecha } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, reconciliarPrestamosVencidos } from '@/lib/prestamos'
 
 interface CuotaMora {
   id: number
@@ -24,6 +24,7 @@ export default function ReportesPage() {
   useEffect(() => {
     (async () => {
       const hoy = new Date().toISOString().slice(0, 10)
+      await reconciliarPrestamosVencidos(supabase)
 
       const [prestamosRes, cuotasRes] = await Promise.all([
         supabase.from('prestamos').select('id,monto,estado'),
