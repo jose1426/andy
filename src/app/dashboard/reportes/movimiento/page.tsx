@@ -158,19 +158,56 @@ function ReporteMovimientoContent() {
 
   const totalPrestado = movimientos.reduce((s, m) => s + m.prestado, 0)
   const totalCobrado = movimientos.reduce((s, m) => s + m.cobrado, 0)
+  const totalInteres = movimientos.reduce((s, m) => s + m.interesDelCobro, 0)
+  const totalAbonoCapital = movimientos.reduce((s, m) => s + m.capitalDelCobro, 0)
   const saldoActual = conSaldo.length ? conSaldo[conSaldo.length - 1].saldo : 0
 
   const clienteSel = clientes.find(c => c.id === parseInt(clienteId))
 
+  const csvEscape = (v: string) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+
+  const exportarExcel = () => {
+    const headers = ['Fecha', 'Movimiento', 'Prestado', 'Cobrado', 'Interés', 'Abono Capital', 'Saldo Capital']
+    const filas = conSaldo.map(m => [
+      m.fecha,
+      `${TIPO_LABEL[m.tipo]} - ${m.descripcion}`,
+      m.prestado > 0 ? m.prestado.toFixed(2) : '',
+      m.cobrado > 0 ? m.cobrado.toFixed(2) : '',
+      m.tipo === 'pago' ? m.interesDelCobro.toFixed(2) : '',
+      m.tipo === 'pago' ? m.capitalDelCobro.toFixed(2) : '',
+      m.saldo.toFixed(2),
+    ])
+    const csv = [headers, ...filas].map(fila => fila.map(csvEscape).join(',')).join('\r\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `movimiento-${clienteSel?.nombre ?? 'cliente'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-4 animate-fadeIn">
-      <div>
-        <p className="text-[12px] text-slate-500 mb-0.5">Reportes / Movimiento</p>
-        <h1 className="text-2xl font-bold text-[#0f172a]">Movimiento por Cliente</h1>
-        <p className="text-[14px] text-slate-500 mt-0.5">Estado de cuenta: préstamos, desembolsos y pagos en orden cronológico</p>
+      <div className="flex items-start justify-between flex-wrap gap-3 print:hidden">
+        <div>
+          <p className="text-[12px] text-slate-500 mb-0.5">Reportes / Movimiento</p>
+          <h1 className="text-2xl font-bold text-[#0f172a]">Movimiento por Cliente</h1>
+          <p className="text-[14px] text-slate-500 mt-0.5">Estado de cuenta: préstamos, desembolsos y pagos en orden cronológico</p>
+        </div>
+        {clienteId && movimientos.length > 0 && (
+          <div className="flex items-center gap-2">
+            <button onClick={() => window.print()} className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-[12px] font-bold">
+              🖨️ Imprimir / PDF
+            </button>
+            <button onClick={exportarExcel} className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold">
+              📊 Exportar Excel
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="bg-white rounded-xl border border-[#e2e8f0] p-4">
+      <div className="bg-white rounded-xl border border-[#e2e8f0] p-4 print:hidden">
         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cliente</label>
         <select value={clienteId} onChange={e => setClienteId(e.target.value)}
           className="w-full sm:w-96 px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400 bg-white">
@@ -178,6 +215,13 @@ function ReporteMovimientoContent() {
           {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre} {c.apellido}</option>)}
         </select>
       </div>
+
+      {clienteId && movimientos.length > 0 && (
+        <div className="hidden print:block">
+          <h1 className="text-xl font-bold text-[#0f172a]">Movimiento — {clienteSel?.nombre} {clienteSel?.apellido}</h1>
+          <p className="text-[12px] text-slate-500">Estado de cuenta al {fmtFecha(new Date().toISOString().slice(0, 10))}</p>
+        </div>
+      )}
 
       {!clienteId ? (
         <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm py-16 text-center text-slate-400 text-[13px]">
@@ -191,7 +235,7 @@ function ReporteMovimientoContent() {
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
             <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
               <div className="text-[9px] font-bold text-slate-500 uppercase mb-1">Total prestado</div>
               <div className="text-[20px] font-extrabold text-[#0f172a]">{fmtMoney(totalPrestado)}</div>
@@ -199,6 +243,14 @@ function ReporteMovimientoContent() {
             <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
               <div className="text-[9px] font-bold text-emerald-700 uppercase mb-1">Total cobrado</div>
               <div className="text-[20px] font-extrabold text-emerald-700">{fmtMoney(totalCobrado)}</div>
+            </div>
+            <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
+              <div className="text-[9px] font-bold text-amber-700 uppercase mb-1">Interés cobrado</div>
+              <div className="text-[20px] font-extrabold text-amber-700">{fmtMoney(totalInteres)}</div>
+            </div>
+            <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
+              <div className="text-[9px] font-bold text-sky-700 uppercase mb-1">Abonado a capital</div>
+              <div className="text-[20px] font-extrabold text-sky-700">{fmtMoney(totalAbonoCapital)}</div>
             </div>
             <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
               <div className="text-[9px] font-bold text-red-600 uppercase mb-1">Saldo de capital pendiente</div>
@@ -221,7 +273,7 @@ function ReporteMovimientoContent() {
                     <th className="px-4 py-2 text-right text-[11px] font-bold uppercase text-slate-500">Interés</th>
                     <th className="px-4 py-2 text-right text-[11px] font-bold uppercase text-slate-500">Abono capital</th>
                     <th className="px-4 py-2 text-right text-[11px] font-bold uppercase text-slate-500">Saldo capital</th>
-                    <th className="px-4 py-2 text-center text-[11px] font-bold uppercase text-slate-500"></th>
+                    <th className="px-4 py-2 text-center text-[11px] font-bold uppercase text-slate-500 print:hidden"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -237,7 +289,7 @@ function ReporteMovimientoContent() {
                       <td className="px-4 py-2 text-right text-amber-700">{m.tipo === 'pago' ? fmtMoney(m.interesDelCobro) : '—'}</td>
                       <td className="px-4 py-2 text-right text-sky-700">{m.tipo === 'pago' ? fmtMoney(m.capitalDelCobro) : '—'}</td>
                       <td className="px-4 py-2 text-right font-bold text-[#0f172a]">{fmtMoney(m.saldo)}</td>
-                      <td className="px-4 py-2 text-center">
+                      <td className="px-4 py-2 text-center print:hidden">
                         <Link href={`/dashboard/prestamos/${m.prestamoId}`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">Ver →</Link>
                       </td>
                     </tr>

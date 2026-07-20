@@ -67,3 +67,18 @@ export interface Desembolso {
   notas: string | null
   created_at: string
 }
+
+export type EstadoSolicitud = 'pendiente' | 'aprobada' | 'rechazada'
+
+export interface Solicitud {
+  id: number
+  nombre: string
+  apellido: string | null
+  cedula: string | null
+  telefono: string | null
+  monto_solicitado: number | null
+  referencia: string | null
+  estado: EstadoSolicitud
+  cliente_id: number | null
+  created_at: string
+}

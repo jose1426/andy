@@ -1,0 +1,143 @@
+'use client'
+
+import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
+import { supabase } from '@/lib/supabase/client'
+import { toast } from 'sonner'
+import { fmtMoney, fmtFecha } from '@/lib/prestamos'
+import type { Solicitud, EstadoSolicitud } from '@/types'
+
+const ESTADO_STYLE: Record<EstadoSolicitud, string> = {
+  pendiente: 'bg-amber-100 text-amber-800 border-amber-300',
+  aprobada: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+  rechazada: 'bg-red-100 text-red-800 border-red-300',
+}
+const ESTADO_LABEL: Record<EstadoSolicitud, string> = {
+  pendiente: 'Pendiente', aprobada: 'Aprobada', rechazada: 'Rechazada',
+}
+
+export default function SolicitudesPage() {
+  const [solicitudes, setSolicitudes] = useState<Solicitud[]>([])
+  const [loading, setLoading] = useState(true)
+  const [procesando, setProcesando] = useState<number | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data, error } = await supabase.from('solicitudes').select('*').order('created_at', { ascending: false })
+    setLoading(false)
+    if (error) { toast.error(error.message); return }
+    setSolicitudes((data || []) as Solicitud[])
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const aprobar = async (s: Solicitud) => {
+    setProcesando(s.id)
+    try {
+      const { data: cliente, error: errCli } = await supabase.from('clientes').insert({
+        nombre: s.nombre, apellido: s.apellido, cedula: s.cedula, telefono: s.telefono,
+        referencia: s.referencia, activo: true,
+      }).select().single()
+      if (errCli) throw errCli
+
+      const { error: errSol } = await supabase.from('solicitudes')
+        .update({ estado: 'aprobada', cliente_id: cliente.id }).eq('id', s.id)
+      if (errSol) throw errSol
+
+      toast.success('Cliente creado. Ya puedes crear su préstamo.')
+      load()
+    } catch (e: any) {
+      toast.error('Error: ' + e.message)
+    } finally {
+      setProcesando(null)
+    }
+  }
+
+  const rechazar = async (s: Solicitud) => {
+    setProcesando(s.id)
+    const { error } = await supabase.from('solicitudes').update({ estado: 'rechazada' }).eq('id', s.id)
+    setProcesando(null)
+    if (error) { toast.error(error.message); return }
+    toast.success('Solicitud rechazada.')
+    load()
+  }
+
+  const pendientes = solicitudes.filter(s => s.estado === 'pendiente')
+  const resueltas = solicitudes.filter(s => s.estado !== 'pendiente')
+
+  return (
+    <div className="space-y-4 animate-fadeIn">
+      <div>
+        <h1 className="text-2xl font-bold text-[#0f172a]">Solicitudes de Préstamo</h1>
+        <p className="text-[14px] text-slate-500 mt-0.5">
+          {pendientes.length} pendiente{pendientes.length !== 1 ? 's' : ''} · comparte{' '}
+          <code className="bg-slate-100 px-1.5 py-0.5 rounded text-[12px]">/solicitar</code> con tus clientes
+        </p>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+        <div className="px-5 py-3 bg-gradient-to-r from-[#0f172a] to-[#059669] text-white font-bold text-[14px]">
+          ⏳ Pendientes de revisión
+        </div>
+        {loading ? (
+          <div className="py-10 text-center text-slate-400 text-[13px]">Cargando…</div>
+        ) : pendientes.length === 0 ? (
+          <div className="py-10 text-center text-slate-400 text-[13px]">Sin solicitudes pendientes 🎉</div>
+        ) : (
+          <div className="divide-y divide-[#f1f5f9]">
+            {pendientes.map(s => (
+              <div key={s.id} className="px-5 py-4 flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <div className="font-bold text-[#0f172a] text-[14px]">{s.nombre} {s.apellido}</div>
+                  <div className="text-[12px] text-slate-500 mt-0.5">
+                    {s.cedula || 'Sin cédula'} · {s.telefono || 'Sin teléfono'}
+                    {s.monto_solicitado ? ` · Solicita ${fmtMoney(s.monto_solicitado)}` : ''}
+                  </div>
+                  {s.referencia && <div className="text-[12px] text-slate-400 mt-0.5">Referencia: {s.referencia}</div>}
+                  <div className="text-[11px] text-slate-400 mt-0.5">{fmtFecha(s.created_at.slice(0, 10))}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => rechazar(s)} disabled={procesando === s.id}
+                    className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-[12px] font-bold disabled:opacity-60">
+                    ❌ Rechazar
+                  </button>
+                  <button onClick={() => aprobar(s)} disabled={procesando === s.id}
+                    className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold disabled:opacity-60">
+                    {procesando === s.id ? '⏳ Procesando…' : '✅ Aprobar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {resueltas.length > 0 && (
+        <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+          <div className="px-5 py-3 bg-[#f1f5f9] font-bold text-[14px] text-[#0f172a]">Historial</div>
+          <table className="w-full border-collapse text-[13px]">
+            <tbody>
+              {resueltas.map(s => (
+                <tr key={s.id} className="border-b border-[#f1f5f9] last:border-0">
+                  <td className="px-5 py-2.5 font-semibold text-[#0f172a]">{s.nombre} {s.apellido}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{s.telefono || '—'}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{s.monto_solicitado ? fmtMoney(s.monto_solicitado) : '—'}</td>
+                  <td className="px-4 py-2.5 text-center">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${ESTADO_STYLE[s.estado]}`}>
+                      {ESTADO_LABEL[s.estado]}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2.5 text-center">
+                    {s.cliente_id && (
+                      <Link href={`/dashboard/clientes`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">Ver clientes →</Link>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
