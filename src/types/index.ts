@@ -24,6 +24,7 @@ export interface Prestamo {
   fecha_inicio: string
   estado: EstadoPrestamo
   notas: string | null
+  carga_historica: boolean
   created_at: string
   cliente?: Cliente
 }
@@ -44,6 +45,8 @@ export interface Cuota {
   created_at: string
 }
 
+export type FormaPago = 'yappy' | 'efectivo' | 'transferencia'
+
 export interface Pago {
   id: number
   cuota_id: number
@@ -51,6 +54,7 @@ export interface Pago {
   monto: number
   fecha: string
   tipo: 'interes' | 'capital' | 'mixto'
+  forma_pago: FormaPago
   notas: string | null
   created_at: string
 }

@@ -4,8 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, reconciliarPrestamosVencidos } from '@/lib/prestamos'
-import type { Cuota } from '@/types'
+import { fmtMoney, fmtFecha, reconciliarPrestamosVencidos, soloDecimal, FORMA_PAGO_LABEL } from '@/lib/prestamos'
+import type { Cuota, FormaPago } from '@/types'
 
 interface CuotaRow extends Cuota {
   prestamo: { id: number; monto: number; tasa_interes: number; fecha_inicio: string; cliente: { nombre: string; apellido: string | null; cedula: string | null } }
@@ -16,6 +16,7 @@ interface PagoRow {
   monto: number
   fecha: string
   tipo: string
+  forma_pago: FormaPago
   cuota: { numero: number; prestamo: { id: number; cliente: { nombre: string; apellido: string | null } } }
 }
 
@@ -39,6 +40,7 @@ export default function CobrosPage() {
   const [cuotasPrestamo, setCuotasPrestamo] = useState<Cuota[]>([])
   const [montoPago, setMontoPago] = useState('')
   const [fechaPago, setFechaPago] = useState('')
+  const [formaPago, setFormaPago] = useState<FormaPago>('efectivo')
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
@@ -50,7 +52,7 @@ export default function CobrosPage() {
         .in('estado', ['pendiente', 'atrasada', 'parcial'])
         .order('fecha_vencimiento'),
       supabase.from('pagos')
-        .select('id,monto,fecha,tipo,cuota:cuotas(numero,prestamo:prestamos(id,cliente:clientes(nombre,apellido)))')
+        .select('id,monto,fecha,tipo,forma_pago,cuota:cuotas(numero,prestamo:prestamos(id,cliente:clientes(nombre,apellido)))')
         .order('created_at', { ascending: false })
         .limit(20),
     ])
@@ -71,6 +73,7 @@ export default function CobrosPage() {
     setCuotaSel(c)
     setMontoPago(String((c.monto_cuota - c.monto_pagado).toFixed(2)))
     setFechaPago(new Date().toISOString().slice(0, 10))
+    setFormaPago('efectivo')
     const { data } = await supabase.from('cuotas').select('*').eq('prestamo_id', c.prestamo.id).order('numero')
     setCuotasPrestamo((data || []) as Cuota[])
     setModal(true)
@@ -95,7 +98,7 @@ export default function CobrosPage() {
       const nuevoEstadoCuota = nuevoMontoPagado >= cuotaSel.monto_cuota - 0.001 ? 'pagada' : 'parcial'
 
       const { error: errPago } = await supabase.from('pagos').insert({
-        cuota_id: cuotaSel.id, prestamo_id: cuotaSel.prestamo.id, monto, tipo, fecha: fechaPago,
+        cuota_id: cuotaSel.id, prestamo_id: cuotaSel.prestamo.id, monto, tipo, fecha: fechaPago, forma_pago: formaPago,
       })
       if (errPago) throw errPago
 
@@ -214,9 +217,12 @@ export default function CobrosPage() {
                 <span className="text-slate-500">
                   {fmtFecha(p.fecha)} · <Link href={`/dashboard/prestamos/${p.cuota.prestamo.id}`} className="font-semibold text-[#0369a1] hover:underline">
                     {p.cuota.prestamo.cliente.nombre} {p.cuota.prestamo.cliente.apellido}
-                  </Link> · cuota #{p.cuota.numero} · <span className="capitalize">{p.tipo}</span>
+                  </Link> · cuota #{p.cuota.numero} · <span className="capitalize">{p.tipo}</span> · {FORMA_PAGO_LABEL[p.forma_pago]}
                 </span>
-                <span className="font-bold text-emerald-700">{fmtMoney(p.monto)}</span>
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-emerald-700">{fmtMoney(p.monto)}</span>
+                  <Link href={`/dashboard/recibo/${p.id}`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">🧾 Recibo</Link>
+                </div>
               </div>
             ))}
           </div>
@@ -239,7 +245,7 @@ export default function CobrosPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto a pagar</label>
-                  <input type="number" step="0.01" min="0" autoFocus value={montoPago} onChange={e => setMontoPago(e.target.value)}
+                  <input type="text" inputMode="decimal" autoFocus value={montoPago} onChange={e => setMontoPago(soloDecimal(e.target.value))}
                     className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[14px] font-bold outline-none focus:border-emerald-400" />
                 </div>
                 <div>
@@ -247,6 +253,15 @@ export default function CobrosPage() {
                   <input type="date" value={fechaPago} onChange={e => setFechaPago(e.target.value)}
                     className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Forma de cobro</label>
+                <select value={formaPago} onChange={e => setFormaPago(e.target.value as FormaPago)}
+                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400 bg-white">
+                  <option value="yappy">Yappy</option>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="transferencia">Transferencia</option>
+                </select>
               </div>
               <p className="text-[11px] text-slate-400">Si el monto supera el interés de la cuota, el excedente se abona a capital y reduce el interés de las próximas cuotas.</p>
               <div className="flex justify-end gap-2.5 pt-2">

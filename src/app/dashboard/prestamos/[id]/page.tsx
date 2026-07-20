@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, FRECUENCIA_LABEL, reconciliarPrestamosVencidos } from '@/lib/prestamos'
-import type { Cliente, Prestamo, Cuota, Pago, Desembolso } from '@/types'
+import { fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, soloDecimal } from '@/lib/prestamos'
+import type { Cliente, Prestamo, Cuota, Pago, Desembolso, Frecuencia, FormaPago } from '@/types'
 
 const ESTADO_CUOTA_STYLE: Record<string, string> = {
   pendiente: 'bg-slate-100 text-slate-600 border-slate-300',
@@ -32,12 +33,19 @@ export default function PrestamoDetallePage() {
   const [cuotaSel, setCuotaSel] = useState<Cuota | null>(null)
   const [montoPago, setMontoPago] = useState('')
   const [fechaPago, setFechaPago] = useState('')
+  const [formaPago, setFormaPago] = useState<FormaPago>('efectivo')
   const [saving, setSaving] = useState(false)
 
   const [modalDesem, setModalDesem] = useState(false)
   const [montoDesem, setMontoDesem] = useState('')
   const [notasDesem, setNotasDesem] = useState('')
+  const [fechaDesem, setFechaDesem] = useState('')
   const [savingDesem, setSavingDesem] = useState(false)
+
+  const [modalEdit, setModalEdit] = useState(false)
+  const [editForm, setEditForm] = useState({ monto: '', tasa_interes: '', frecuencia: 'quincenal' as Frecuencia, fecha_inicio: '', notas: '', carga_historica: false })
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [finalizando, setFinalizando] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -64,6 +72,7 @@ export default function PrestamoDetallePage() {
     setCuotaSel(c)
     setMontoPago(String((c.monto_cuota - c.monto_pagado).toFixed(2)))
     setFechaPago(new Date().toISOString().slice(0, 10))
+    setFormaPago('efectivo')
     setModal(true)
   }
   const cerrarModal = () => { setModal(false); setCuotaSel(null); setMontoPago(''); setFechaPago('') }
@@ -87,7 +96,7 @@ export default function PrestamoDetallePage() {
       const nuevoEstadoCuota = nuevoMontoPagado >= cuotaSel.monto_cuota - 0.001 ? 'pagada' : 'parcial'
 
       const { error: errPago } = await supabase.from('pagos').insert({
-        cuota_id: cuotaSel.id, prestamo_id: prestamo.id, monto, tipo, fecha: fechaPago,
+        cuota_id: cuotaSel.id, prestamo_id: prestamo.id, monto, tipo, fecha: fechaPago, forma_pago: formaPago,
       })
       if (errPago) throw errPago
 
@@ -128,8 +137,64 @@ export default function PrestamoDetallePage() {
     }
   }
 
-  const abrirDesembolso = () => { setMontoDesem(''); setNotasDesem(''); setModalDesem(true) }
+  const abrirDesembolso = () => { setMontoDesem(''); setNotasDesem(''); setFechaDesem(new Date().toISOString().slice(0, 10)); setModalDesem(true) }
   const cerrarDesembolso = () => setModalDesem(false)
+
+  const abrirEditar = () => {
+    if (!prestamo) return
+    setEditForm({
+      monto: String(prestamo.monto),
+      tasa_interes: String(prestamo.tasa_interes),
+      frecuencia: prestamo.frecuencia,
+      fecha_inicio: prestamo.fecha_inicio,
+      notas: prestamo.notas ?? '',
+      carga_historica: prestamo.carga_historica,
+    })
+    setModalEdit(true)
+  }
+  const cerrarEditar = () => setModalEdit(false)
+
+  const guardarEdicion = async () => {
+    if (!prestamo) return
+    const monto = parseFloat(editForm.monto)
+    const tasa = parseFloat(editForm.tasa_interes)
+    if (!monto || monto <= 0) { toast.error('Ingrese un monto válido.'); return }
+    if (!tasa || tasa <= 0) { toast.error('Ingrese una tasa válida.'); return }
+    if (!editForm.fecha_inicio) { toast.error('Ingrese la fecha de inicio.'); return }
+
+    setSavingEdit(true)
+    try {
+      const { error } = await supabase.from('prestamos').update({
+        monto, tasa_interes: tasa, frecuencia: editForm.frecuencia,
+        fecha_inicio: editForm.fecha_inicio, notas: editForm.notas || null,
+        carga_historica: editForm.carga_historica,
+      }).eq('id', prestamo.id)
+      if (error) throw error
+
+      toast.success('Préstamo actualizado.')
+      cerrarEditar()
+      load()
+    } catch (e: any) {
+      toast.error('Error: ' + e.message)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const finalizarCargaHistorica = async () => {
+    if (!prestamo) return
+    setFinalizando(true)
+    try {
+      const { error } = await supabase.from('prestamos').update({ carga_historica: false }).eq('id', prestamo.id)
+      if (error) throw error
+      toast.success('Carga histórica finalizada. Desde ahora se calcula mora normalmente.')
+      load()
+    } catch (e: any) {
+      toast.error('Error: ' + e.message)
+    } finally {
+      setFinalizando(false)
+    }
+  }
 
   const registrarDesembolso = async () => {
     if (!prestamo) return
@@ -139,7 +204,7 @@ export default function PrestamoDetallePage() {
     setSavingDesem(true)
     try {
       const { error: errDesem } = await supabase.from('desembolsos').insert({
-        prestamo_id: prestamo.id, monto, notas: notasDesem || null,
+        prestamo_id: prestamo.id, monto, notas: notasDesem || null, fecha: fechaDesem,
       })
       if (errDesem) throw errDesem
 
@@ -183,6 +248,8 @@ export default function PrestamoDetallePage() {
   const cuotasVigentes = cuotas.filter(c => c.estado !== 'capitalizada')
   const totalPagado = cuotasVigentes.reduce((s, c) => s + c.monto_pagado, 0)
   const totalEsperado = cuotasVigentes.reduce((s, c) => s + c.monto_cuota, 0)
+  const totalAbonoCapital = cuotas.reduce((s, c) => s + Math.max(0, c.monto_pagado - c.interes), 0)
+  const saldoCapital = prestamo.monto - totalAbonoCapital
 
   return (
     <div className="space-y-4 animate-fadeIn">
@@ -190,10 +257,28 @@ export default function PrestamoDetallePage() {
         <button onClick={() => router.push('/dashboard/prestamos')} className="text-[13px] text-slate-500 hover:text-slate-700 flex items-center gap-1">
           ← Volver a Préstamos
         </button>
-        <button onClick={abrirDesembolso} className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold">
-          ➕ Prestar más (sumar a este préstamo)
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={abrirEditar} className="px-3.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-[12px] font-bold">
+            ✏️ Editar Préstamo
+          </button>
+          <button onClick={abrirDesembolso} className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold">
+            ➕ Prestar más (sumar a este préstamo)
+          </button>
+        </div>
       </div>
+
+      {prestamo.carga_historica && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl px-5 py-3.5 flex items-center justify-between flex-wrap gap-3">
+          <div className="text-[12px] text-amber-800">
+            📋 <b>Modo carga histórica activo.</b> No se calcula mora ni capitalización de interés en este préstamo.
+            Registra todos los pagos pasados y luego finaliza este modo.
+          </div>
+          <button onClick={finalizarCargaHistorica} disabled={finalizando}
+            className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-bold disabled:opacity-60 whitespace-nowrap">
+            {finalizando ? '⏳ Guardando…' : '✅ Finalizar carga histórica'}
+          </button>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
         <div className="px-6 py-5 bg-gradient-to-r from-[#0f172a] to-[#059669] text-white flex items-center justify-between flex-wrap gap-3">
@@ -204,8 +289,10 @@ export default function PrestamoDetallePage() {
             </div>
           </div>
           <div className="text-right">
-            <div className="text-[22px] font-extrabold">{fmtMoney(prestamo.monto)}</div>
-            <div className="text-[12px] text-emerald-200/80">{prestamo.tasa_interes}% · {FRECUENCIA_LABEL[prestamo.frecuencia]} · desde {fmtFecha(prestamo.fecha_inicio)}</div>
+            <div className="text-[22px] font-extrabold">{fmtMoney(saldoCapital)}</div>
+            <div className="text-[12px] text-emerald-200/80">
+              Saldo pendiente · prestado {fmtMoney(prestamo.monto)} · {prestamo.tasa_interes}% · {FRECUENCIA_LABEL[prestamo.frecuencia]} · desde {fmtFecha(prestamo.fecha_inicio)}
+            </div>
           </div>
         </div>
 
@@ -219,8 +306,12 @@ export default function PrestamoDetallePage() {
             <div className="text-[14px] font-bold text-emerald-700">{fmtMoney(totalPagado)}</div>
           </div>
           <div>
-            <div className="text-[9px] font-bold text-red-600 uppercase">Saldo pendiente</div>
-            <div className="text-[14px] font-bold text-red-600">{fmtMoney(totalEsperado - totalPagado)}</div>
+            <div className="text-[9px] font-bold text-red-600 uppercase">Saldo pendiente (capital)</div>
+            <div className="text-[14px] font-bold text-red-600">{fmtMoney(saldoCapital)}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-bold text-sky-700 uppercase">Abonado a capital</div>
+            <div className="text-[14px] font-bold text-sky-700">{fmtMoney(totalAbonoCapital)}</div>
           </div>
         </div>
 
@@ -290,8 +381,11 @@ export default function PrestamoDetallePage() {
           <div className="space-y-2">
             {pagos.map(p => (
               <div key={p.id} className="flex items-center justify-between text-[13px] border-b border-[#f1f5f9] pb-2 last:border-0">
-                <span className="text-slate-500">{fmtFecha(p.fecha)} · <span className="capitalize">{p.tipo}</span></span>
-                <span className="font-bold text-emerald-700">{fmtMoney(p.monto)}</span>
+                <span className="text-slate-500">{fmtFecha(p.fecha)} · <span className="capitalize">{p.tipo}</span> · {FORMA_PAGO_LABEL[p.forma_pago]}</span>
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-emerald-700">{fmtMoney(p.monto)}</span>
+                  <Link href={`/dashboard/recibo/${p.id}`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">🧾 Recibo</Link>
+                </div>
               </div>
             ))}
           </div>
@@ -314,7 +408,7 @@ export default function PrestamoDetallePage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto a pagar</label>
-                  <input type="number" step="0.01" min="0" autoFocus value={montoPago} onChange={e => setMontoPago(e.target.value)}
+                  <input type="text" inputMode="decimal" autoFocus value={montoPago} onChange={e => setMontoPago(soloDecimal(e.target.value))}
                     className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[14px] font-bold outline-none focus:border-emerald-400" />
                 </div>
                 <div>
@@ -323,11 +417,80 @@ export default function PrestamoDetallePage() {
                     className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
                 </div>
               </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Forma de cobro</label>
+                <select value={formaPago} onChange={e => setFormaPago(e.target.value as FormaPago)}
+                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400 bg-white">
+                  <option value="yappy">Yappy</option>
+                  <option value="efectivo">Efectivo</option>
+                  <option value="transferencia">Transferencia</option>
+                </select>
+              </div>
               <p className="text-[11px] text-slate-400">Si el monto supera el interés de la cuota, el excedente se abona a capital y reduce el interés de las próximas cuotas.</p>
               <div className="flex justify-end gap-2.5 pt-2">
                 <button onClick={cerrarModal} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
                 <button onClick={registrarPago} disabled={saving} className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold disabled:opacity-60">
                   {saving ? '⏳ Guardando…' : '💾 Registrar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalEdit && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={e => e.target === e.currentTarget && cerrarEditar()}>
+          <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-slideUp">
+            <div className="bg-gradient-to-r from-[#0f172a] to-[#059669] px-6 py-4 flex items-center justify-between">
+              <span className="text-white font-bold text-[15px]">✏️ Editar Préstamo — {prestamo.cliente.nombre} {prestamo.cliente.apellido}</span>
+              <button onClick={cerrarEditar} className="text-white/80 hover:text-white text-lg font-bold">✕</button>
+            </div>
+            <div className="p-6 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto</label>
+                  <input type="text" inputMode="decimal" value={editForm.monto} onChange={e => setEditForm(prev => ({ ...prev, monto: soloDecimal(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Tasa de interés (%)</label>
+                  <input type="text" inputMode="decimal" value={editForm.tasa_interes} onChange={e => setEditForm(prev => ({ ...prev, tasa_interes: soloDecimal(e.target.value) }))}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Frecuencia</label>
+                  <select value={editForm.frecuencia} onChange={e => setEditForm(prev => ({ ...prev, frecuencia: e.target.value as Frecuencia }))}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400">
+                    <option value="semanal">Semanal</option>
+                    <option value="quincenal">Quincenal</option>
+                    <option value="mensual">Mensual</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Fecha de inicio</label>
+                  <input type="date" value={editForm.fecha_inicio} onChange={e => setEditForm(prev => ({ ...prev, fecha_inicio: e.target.value }))}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Nota (opcional)</label>
+                <input value={editForm.notas} onChange={e => setEditForm(prev => ({ ...prev, notas: e.target.value }))}
+                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+              </div>
+              <label className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 cursor-pointer">
+                <input type="checkbox" checked={editForm.carga_historica} onChange={e => setEditForm(prev => ({ ...prev, carga_historica: e.target.checked }))}
+                  className="mt-0.5" />
+                <span className="text-[12px] text-amber-800">
+                  <b>Carga histórica</b> — pausa el cálculo de mora/capitalización mientras registras pagos pasados.
+                </span>
+              </label>
+              <p className="text-[11px] text-slate-400">Esto solo cambia los datos del préstamo. Las cuotas ya generadas no se recalculan automáticamente.</p>
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button onClick={cerrarEditar} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
+                <button onClick={guardarEdicion} disabled={savingEdit} className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold disabled:opacity-60">
+                  {savingEdit ? '⏳ Guardando…' : '💾 Actualizar'}
                 </button>
               </div>
             </div>
@@ -344,10 +507,17 @@ export default function PrestamoDetallePage() {
             </div>
             <div className="p-6 space-y-3">
               <p className="text-[12px] text-slate-500">El monto se suma al capital de este préstamo y queda registrado en el historial de desembolsos, sin crear un préstamo aparte.</p>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto adicional</label>
-                <input type="number" step="0.01" min="0" autoFocus value={montoDesem} onChange={e => setMontoDesem(e.target.value)}
-                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[14px] font-bold outline-none focus:border-emerald-400" />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto adicional</label>
+                  <input type="text" inputMode="decimal" autoFocus value={montoDesem} onChange={e => setMontoDesem(soloDecimal(e.target.value))}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[14px] font-bold outline-none focus:border-emerald-400" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Fecha</label>
+                  <input type="date" value={fechaDesem} onChange={e => setFechaDesem(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+                </div>
               </div>
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 mb-1">Nota (opcional)</label>

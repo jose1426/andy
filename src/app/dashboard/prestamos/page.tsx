@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, primeraCuota, FRECUENCIA_LABEL } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, primeraCuota, FRECUENCIA_LABEL, soloDecimal } from '@/lib/prestamos'
 import type { Cliente, Prestamo, Frecuencia } from '@/types'
 
 const ESTADO_STYLE: Record<string, string> = {
@@ -20,7 +20,7 @@ const ESTADO_LABEL: Record<string, string> = {
 function emptyForm() {
   return {
     cliente_id: '', monto: '', tasa_interes: '', frecuencia: 'quincenal' as Frecuencia,
-    fecha_inicio: new Date().toISOString().slice(0, 10), notas: '',
+    fecha_inicio: new Date().toISOString().slice(0, 10), notas: '', carga_historica: false,
   }
 }
 
@@ -70,6 +70,7 @@ export default function PrestamosPage() {
         monto, tasa_interes: tasa, frecuencia: form.frecuencia,
         fecha_inicio: form.fecha_inicio,
         notas: form.notas || null, estado: 'activo',
+        carga_historica: form.carga_historica,
       }).select().single()
       if (error) throw error
 
@@ -188,12 +189,12 @@ export default function PrestamosPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto prestado</label>
-                  <input type="number" step="0.01" min="0" value={form.monto} onChange={e => f('monto', e.target.value)}
+                  <input type="text" inputMode="decimal" value={form.monto} onChange={e => f('monto', soloDecimal(e.target.value))}
                     className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 mb-1">Tasa de interés (% por periodo)</label>
-                  <input type="number" step="0.01" min="0" value={form.tasa_interes} onChange={e => f('tasa_interes', e.target.value)}
+                  <input type="text" inputMode="decimal" value={form.tasa_interes} onChange={e => f('tasa_interes', soloDecimal(e.target.value))}
                     className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
                 </div>
               </div>
@@ -218,6 +219,15 @@ export default function PrestamosPage() {
                 <input value={form.notas} onChange={e => f('notas', e.target.value)}
                   className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
               </div>
+
+              <label className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 cursor-pointer">
+                <input type="checkbox" checked={form.carga_historica} onChange={e => f('carga_historica', e.target.checked)}
+                  className="mt-0.5" />
+                <span className="text-[12px] text-amber-800">
+                  <b>Carga histórica</b> — préstamo viejo que ya se pagó a tiempo. Pausa el cálculo de mora/capitalización
+                  hasta que registres los pagos pasados y lo desactives en el detalle del préstamo.
+                </span>
+              </label>
 
               {interesPeriodo > 0 && (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-[12px] text-emerald-800">
