@@ -247,9 +247,11 @@ export default function PrestamoDetallePage() {
   // reflejado en el interés de las cuotas siguientes, contarlas aparte duplicaría el monto.
   const cuotasVigentes = cuotas.filter(c => c.estado !== 'capitalizada')
   const totalPagado = cuotasVigentes.reduce((s, c) => s + c.monto_pagado, 0)
-  const totalEsperado = cuotasVigentes.reduce((s, c) => s + c.monto_cuota, 0)
   const totalAbonoCapital = cuotas.reduce((s, c) => s + Math.max(0, c.monto_pagado - c.interes), 0)
   const saldoCapital = prestamo.monto - totalAbonoCapital
+  const totalDesembolsado = desembolsos.reduce((s, d) => s + Number(d.monto), 0)
+  const totalAdicional = desembolsos.filter(d => !(d.notas || '').startsWith('Interés capitalizado')).reduce((s, d) => s + Number(d.monto), 0)
+  const montoInicial = Math.round((prestamo.monto - totalDesembolsado) * 100) / 100
 
   return (
     <div className="space-y-4 animate-fadeIn">
@@ -291,27 +293,35 @@ export default function PrestamoDetallePage() {
           <div className="text-right">
             <div className="text-[22px] font-extrabold">{fmtMoney(saldoCapital)}</div>
             <div className="text-[12px] text-emerald-200/80">
-              Saldo pendiente · prestado {fmtMoney(prestamo.monto)} · {prestamo.tasa_interes}% · {FRECUENCIA_LABEL[prestamo.frecuencia]} · desde {fmtFecha(prestamo.fecha_inicio)}
+              Saldo pendiente · inicial {fmtMoney(montoInicial)}
+              {totalAdicional > 0 && <> + adicional {fmtMoney(totalAdicional)}</>}
+              {' '}· {prestamo.tasa_interes}% · {FRECUENCIA_LABEL[prestamo.frecuencia]} · desde {fmtFecha(prestamo.fecha_inicio)}
             </div>
           </div>
         </div>
 
         <div className="px-6 py-3 flex items-center gap-8 bg-[#f8fafc] border-b border-[#e2e8f0] flex-wrap">
           <div>
-            <div className="text-[9px] font-bold text-slate-500 uppercase">Total esperado</div>
-            <div className="text-[14px] font-bold text-[#0f172a]">{fmtMoney(totalEsperado)}</div>
+            <div className="text-[9px] font-bold text-slate-500 uppercase">Monto inicial</div>
+            <div className="text-[14px] font-bold text-[#0f172a]">{fmtMoney(montoInicial)}</div>
           </div>
+          {totalAdicional > 0 && (
+            <div>
+              <div className="text-[9px] font-bold text-purple-700 uppercase">Adicional</div>
+              <div className="text-[14px] font-bold text-purple-700">{fmtMoney(totalAdicional)}</div>
+            </div>
+          )}
           <div>
             <div className="text-[9px] font-bold text-emerald-700 uppercase">Total cobrado</div>
             <div className="text-[14px] font-bold text-emerald-700">{fmtMoney(totalPagado)}</div>
           </div>
           <div>
-            <div className="text-[9px] font-bold text-red-600 uppercase">Saldo pendiente (capital)</div>
-            <div className="text-[14px] font-bold text-red-600">{fmtMoney(saldoCapital)}</div>
-          </div>
-          <div>
             <div className="text-[9px] font-bold text-sky-700 uppercase">Abonado a capital</div>
             <div className="text-[14px] font-bold text-sky-700">{fmtMoney(totalAbonoCapital)}</div>
+          </div>
+          <div>
+            <div className="text-[9px] font-bold text-red-600 uppercase">Saldo pendiente (capital)</div>
+            <div className="text-[14px] font-bold text-red-600">{fmtMoney(saldoCapital)}</div>
           </div>
         </div>
 
