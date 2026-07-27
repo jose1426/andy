@@ -59,9 +59,40 @@ function cuota(numero: number, fechaVencimiento: string, saldoCapital: number, t
   }
 }
 
-/** Primera cuota al crear el préstamo: interés sobre el capital inicial. */
-export function primeraCuota(monto: number, tasaInteres: number, frecuencia: Frecuencia, fechaInicio: string): CuotaNueva {
-  return cuota(1, addDias(fechaInicio, DIAS_FRECUENCIA[frecuencia]), monto, tasaInteres)
+/** Días calendario entre dos fechas ISO (b - a). */
+export function diasEntre(a: string, b: string): number {
+  return Math.round((Date.parse(b + 'T00:00:00') - Date.parse(a + 'T00:00:00')) / 86_400_000)
+}
+
+/** Interés de un monto de capital que solo estuvo activo `diasStub` de los `diasPeriodo` del ciclo. */
+export function interesProrrateado(monto: number, tasaInteres: number, diasStub: number, diasPeriodo: number): number {
+  return Math.round(monto * (tasaInteres / 100) * (diasStub / diasPeriodo) * 100) / 100
+}
+
+/**
+ * Primera cuota al crear el préstamo: interés sobre el capital inicial.
+ * Si se pasa `primerVencimiento` y cae antes del período completo (préstamo
+ * desembolsado a mitad de ciclo, p. ej. inicio 25 con vencimiento el 30 para
+ * alinearlo con la quincena de otro préstamo), el interés de esa primera cuota
+ * se prorratea por días: capital × tasa% × (días_stub / días_período).
+ * El capital no cambia por el prorrateo, solo el interés de ese primer tramo.
+ */
+export function primeraCuota(
+  monto: number, tasaInteres: number, frecuencia: Frecuencia, fechaInicio: string,
+  primerVencimiento?: string | null,
+): CuotaNueva {
+  const vence = primerVencimiento || addDias(fechaInicio, DIAS_FRECUENCIA[frecuencia])
+  const diasPeriodo = DIAS_FRECUENCIA[frecuencia]
+  const diasStub = diasEntre(fechaInicio, vence)
+  const esProrrateo = diasStub > 0 && diasStub < diasPeriodo
+
+  if (!esProrrateo) return cuota(1, vence, monto, tasaInteres)
+
+  const interes = interesProrrateado(monto, tasaInteres, diasStub, diasPeriodo)
+  return {
+    numero: 1, fecha_vencimiento: vence, capital: 0, interes,
+    monto_cuota: interes, monto_pagado: 0, saldo_capital: monto, estado: 'pendiente',
+  }
 }
 
 /**
@@ -140,9 +171,10 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
 
     // A partir de aquí se relee todo en frío: no se reutiliza nada calculado
     // antes de la capitalización, para no arrastrar estados que hayan cambiado.
-    const [{ data: prestamoFresh }, { data: cuotasList }] = await Promise.all([
+    const [{ data: prestamoFresh }, { data: cuotasList }, { data: desembolsosList }] = await Promise.all([
       supabase.from('prestamos').select('monto').eq('id', p.id).single(),
       supabase.from('cuotas').select('*').eq('prestamo_id', p.id).order('numero'),
+      supabase.from('desembolsos').select('monto,fecha').eq('prestamo_id', p.id),
     ])
     if (!cuotasList?.length) continue
     const monto = (prestamoFresh as any)?.monto ?? p.monto
@@ -157,9 +189,31 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
 
     // 2) Recalcular interés de las cuotas abiertas restantes sobre el saldo vigente
     // (por si cambió, ya sea por la capitalización de arriba o por otro proceso).
+    // La cuota mas proxima a vencer prorratea por dias los desembolsos que caigan
+    // dentro de su propio periodo (capital que no estuvo activo el periodo completo);
+    // el resto del saldo de esa cuota, y las demas cuotas abiertas, llevan interes
+    // de periodo completo como siempre.
     const abiertas = cuotasList.filter((c: any) => c.estado === 'pendiente' || c.estado === 'atrasada')
     const tasa = p.tasa_interes / 100
-    for (const c of abiertas) {
+    const diasPeriodo = DIAS_FRECUENCIA[p.frecuencia as Frecuencia]
+    const [proxima, ...resto] = abiertas
+    if (proxima) {
+      const inicioPeriodo = addDias(proxima.fecha_vencimiento, -diasPeriodo)
+      const desembolsosPeriodo = (desembolsosList || []).filter((d: any) => d.fecha > inicioPeriodo && d.fecha <= proxima.fecha_vencimiento)
+      const totalDesembolsosPeriodo = desembolsosPeriodo.reduce((s: number, d: any) => s + Number(d.monto), 0)
+      const saldoBase = Math.round((saldo - totalDesembolsosPeriodo) * 100) / 100
+      let nuevoInteres = Math.round(saldoBase * tasa * 100) / 100
+      for (const d of desembolsosPeriodo) {
+        const diasStub = Math.max(0, Math.min(diasPeriodo, diasEntre(d.fecha, proxima.fecha_vencimiento)))
+        nuevoInteres = Math.round((nuevoInteres + interesProrrateado(Number(d.monto), p.tasa_interes, diasStub, diasPeriodo)) * 100) / 100
+      }
+      if (nuevoInteres !== proxima.interes) {
+        await supabase.from('cuotas').update({
+          interes: nuevoInteres, capital: 0, monto_cuota: nuevoInteres, saldo_capital: saldo,
+        }).eq('id', proxima.id).in('estado', ['pendiente', 'atrasada'])
+      }
+    }
+    for (const c of resto) {
       const nuevoInteres = Math.round(saldo * tasa * 100) / 100
       if (nuevoInteres === c.interes) continue
       await supabase.from('cuotas').update({

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, telefonoWhatsapp, soloDecimal } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, telefonoWhatsapp, soloDecimal, primeraCuota } from '@/lib/prestamos'
 import type { Solicitud, EstadoSolicitud, Frecuencia } from '@/types'
 
 const PERIODO_LABEL: Record<Frecuencia, string> = { semanal: 'semana', quincenal: 'quincena', mensual: 'mes' }
@@ -87,15 +87,37 @@ export default function SolicitudesPage() {
 
     setProcesando(s.id)
     try {
-      const { data: cliente, error: errCli } = await supabase.from('clientes').insert({
-        nombre: s.nombre, apellido: s.apellido, cedula: s.cedula, telefono: s.telefono,
-        referencia: s.referencia, activo: true,
-      }).select().single()
-      if (errCli) throw errCli
+      let clienteId: number | null = null
+      if (s.telefono) {
+        const digitos = s.telefono.replace(/\D/g, '')
+        const { data: candidatos, error: errBusca } = await supabase.from('clientes').select('id, telefono')
+        if (errBusca) throw errBusca
+        clienteId = candidatos?.find(c => (c.telefono || '').replace(/\D/g, '') === digitos)?.id ?? null
+      }
+      const clienteExistente = clienteId !== null
+      if (clienteId === null) {
+        const { data: cliente, error: errCli } = await supabase.from('clientes').insert({
+          nombre: s.nombre, apellido: s.apellido, cedula: s.cedula, telefono: s.telefono,
+          referencia: s.referencia, activo: true,
+        }).select().single()
+        if (errCli) throw errCli
+        clienteId = cliente.id
+      }
 
       const { error: errSol } = await supabase.from('solicitudes')
-        .update({ estado: 'aprobada', cliente_id: cliente.id }).eq('id', s.id)
+        .update({ estado: 'aprobada', cliente_id: clienteId }).eq('id', s.id)
       if (errSol) throw errSol
+
+      const fechaInicio = new Date().toISOString().slice(0, 10)
+      const { data: prestamo, error: errPre } = await supabase.from('prestamos').insert({
+        cliente_id: clienteId, monto, tasa_interes: tasa, frecuencia: frecuenciaForm,
+        fecha_inicio: fechaInicio, notas: null, estado: 'activo', carga_historica: false,
+      }).select().single()
+      if (errPre) throw errPre
+
+      const c1 = primeraCuota(monto, tasa, frecuenciaForm, fechaInicio)
+      const { error: errCuota } = await supabase.from('cuotas').insert({ ...c1, prestamo_id: prestamo.id })
+      if (errCuota) throw errCuota
 
       if (s.telefono) {
         const tel = telefonoWhatsapp(s.telefono)
@@ -103,7 +125,7 @@ export default function SolicitudesPage() {
         window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank', 'noopener,noreferrer')
       }
 
-      toast.success('Cliente creado. Ya puedes crear su préstamo con estos mismos términos.')
+      toast.success(clienteExistente ? 'Préstamo creado para el cliente existente.' : 'Cliente y préstamo creados.')
       setAprobando(null)
       load()
     } catch (e: any) {
@@ -234,6 +256,16 @@ export default function SolicitudesPage() {
           <div className="px-5 py-3 bg-[#f1f5f9] font-bold text-[14px] text-[#0f172a]">Historial</div>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr className="bg-[#f8fafc] border-b border-[#e2e8f0]">
+                  <th className="px-5 py-2 text-left text-[11px] font-bold uppercase text-slate-500">Cliente</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-bold uppercase text-slate-500">Teléfono</th>
+                  <th className="px-4 py-2 text-left text-[11px] font-bold uppercase text-slate-500">Monto</th>
+                  <th className="px-4 py-2 text-center text-[11px] font-bold uppercase text-slate-500">Estado</th>
+                  <th className="px-4 py-2 text-center text-[11px] font-bold uppercase text-slate-500 print:hidden">Notificación</th>
+                  <th className="px-4 py-2 text-center text-[11px] font-bold uppercase text-slate-500 print:hidden">Acciones</th>
+                </tr>
+              </thead>
               <tbody>
                 {resueltas.map(s => (
                   <tr key={s.id} className="border-b border-[#f1f5f9] last:border-0">

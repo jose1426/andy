@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, soloDecimal } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, soloDecimal, addDias, diasEntre, interesProrrateado, DIAS_FRECUENCIA } from '@/lib/prestamos'
 import type { Cliente, Prestamo, Cuota, Pago, Desembolso, Frecuencia, FormaPago } from '@/types'
 
 const ESTADO_CUOTA_STYLE: Record<string, string> = {
@@ -214,18 +214,9 @@ export default function PrestamoDetallePage() {
         .eq('id', prestamo.id)
       if (errMonto) throw errMonto
 
-      // Recalcular interés de las cuotas futuras (pendientes/atrasadas) sobre el nuevo saldo,
-      // que ahora incluye el capital recién desembolsado.
-      const capitalPagadoTotal = cuotas.reduce((s, c) => s + Math.max(0, c.monto_pagado - c.interes), 0)
-      const nuevoSaldo = Math.max(0, Math.round((nuevoMontoTotal - capitalPagadoTotal) * 100) / 100)
-      const tasa = prestamo.tasa_interes / 100
-      const futuras = cuotas.filter(c => c.estado === 'pendiente' || c.estado === 'atrasada')
-      for (const c of futuras) {
-        const nuevoInteres = Math.round(nuevoSaldo * tasa * 100) / 100
-        await supabase.from('cuotas').update({
-          interes: nuevoInteres, capital: 0, monto_cuota: nuevoInteres, saldo_capital: nuevoSaldo,
-        }).eq('id', c.id)
-      }
+      // El interes de las cuotas abiertas se recalcula en reconciliarPrestamosVencidos
+      // (prorrateando por dias el capital recien desembolsado), que se ejecuta al
+      // recargar mas abajo — no hace falta duplicar ese calculo aqui.
 
       toast.success('Desembolso registrado y sumado al préstamo.')
       cerrarDesembolso()
@@ -252,6 +243,17 @@ export default function PrestamoDetallePage() {
   const totalDesembolsado = desembolsos.reduce((s, d) => s + Number(d.monto), 0)
   const totalAdicional = desembolsos.filter(d => !(d.notas || '').startsWith('Interés capitalizado')).reduce((s, d) => s + Number(d.monto), 0)
   const montoInicial = Math.round((prestamo.monto - totalDesembolsado) * 100) / 100
+
+  // Si el desembolso cayó a mitad del período de alguna cuota, muestra cómo se
+  // prorrateó su interés por días (mismo cálculo que aplica reconciliarPrestamosVencidos).
+  const prorrateoDesembolso = (d: Desembolso) => {
+    const diasPeriodo = DIAS_FRECUENCIA[prestamo.frecuencia]
+    const cuotaPeriodo = cuotas.find(c => d.fecha > addDias(c.fecha_vencimiento, -diasPeriodo) && d.fecha <= c.fecha_vencimiento)
+    if (!cuotaPeriodo) return null
+    const diasStub = diasEntre(d.fecha, cuotaPeriodo.fecha_vencimiento)
+    if (diasStub <= 0 || diasStub >= diasPeriodo) return null
+    return { diasStub, diasPeriodo, interes: interesProrrateado(Number(d.monto), prestamo.tasa_interes, diasStub, diasPeriodo) }
+  }
 
   return (
     <div className="space-y-4 animate-fadeIn">
@@ -331,6 +333,7 @@ export default function PrestamoDetallePage() {
               <tr className="bg-[#f1f5f9] border-b-2 border-[#e2e8f0]">
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">#</th>
                 <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">Vencimiento</th>
+                <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Saldo</th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Interés</th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Capital</th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Cuota</th>
@@ -340,10 +343,11 @@ export default function PrestamoDetallePage() {
               </tr>
             </thead>
             <tbody>
-              {cuotas.map((c, i) => (
+              {[...cuotas].reverse().map((c, i) => (
                 <tr key={c.id} className={`border-b border-[#f1f5f9] ${i % 2 === 0 ? '' : 'bg-[#f8fafc]'}`}>
                   <td className="px-4 py-2.5 text-center font-mono text-slate-500">{c.numero}</td>
                   <td className="px-4 py-2.5">{fmtFecha(c.fecha_vencimiento)}</td>
+                  <td className="px-4 py-2.5 text-right">{fmtMoney(c.saldo_capital)}</td>
                   <td className="px-4 py-2.5 text-right">{fmtMoney(c.interes)}</td>
                   <td className="px-4 py-2.5 text-right">{c.capital > 0 ? fmtMoney(c.capital) : '—'}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(totalCuota(c))}</td>
@@ -373,12 +377,22 @@ export default function PrestamoDetallePage() {
           <div className="text-[13px] text-slate-400 py-4 text-center">Sin desembolsos registrados.</div>
         ) : (
           <div className="space-y-2">
-            {desembolsos.map(d => (
+            {desembolsos.map(d => {
+              const prorrateo = prorrateoDesembolso(d)
+              return (
               <div key={d.id} className="flex items-center justify-between text-[13px] border-b border-[#f1f5f9] pb-2 last:border-0">
-                <span className="text-slate-500">{fmtFecha(d.fecha)}{d.notas ? ` · ${d.notas}` : ''}</span>
+                <span className="text-slate-500">
+                  {fmtFecha(d.fecha)}{d.notas ? ` · ${d.notas}` : ''}
+                  {prorrateo && (
+                    <span className="block text-[11px] text-emerald-700">
+                      Prorrateado {prorrateo.diasStub}/{prorrateo.diasPeriodo} días · interés {fmtMoney(prorrateo.interes)}
+                    </span>
+                  )}
+                </span>
                 <span className="font-bold text-[#0f172a]">{fmtMoney(d.monto)}</span>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

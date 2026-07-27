@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, primeraCuota, FRECUENCIA_LABEL, soloDecimal } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, primeraCuota, FRECUENCIA_LABEL, soloDecimal, diasEntre, DIAS_FRECUENCIA } from '@/lib/prestamos'
 import type { Cliente, Prestamo, Frecuencia } from '@/types'
 
 const ESTADO_STYLE: Record<string, string> = {
@@ -20,7 +20,7 @@ const ESTADO_LABEL: Record<string, string> = {
 function emptyForm() {
   return {
     cliente_id: '', monto: '', tasa_interes: '', frecuencia: 'quincenal' as Frecuencia,
-    fecha_inicio: new Date().toISOString().slice(0, 10), notas: '', carga_historica: false,
+    fecha_inicio: new Date().toISOString().slice(0, 10), primer_vencimiento: '', notas: '',
   }
 }
 
@@ -62,6 +62,9 @@ export default function PrestamosPage() {
     if (!form.cliente_id) { toast.error('Seleccione un cliente.'); return }
     if (!monto || monto <= 0) { toast.error('Ingrese un monto válido.'); return }
     if (!tasa || tasa <= 0) { toast.error('Ingrese una tasa de interés válida.'); return }
+    if (form.primer_vencimiento && form.primer_vencimiento <= form.fecha_inicio) {
+      toast.error('El primer vencimiento debe ser posterior a la fecha de inicio.'); return
+    }
 
     setSaving(true)
     try {
@@ -70,11 +73,11 @@ export default function PrestamosPage() {
         monto, tasa_interes: tasa, frecuencia: form.frecuencia,
         fecha_inicio: form.fecha_inicio,
         notas: form.notas || null, estado: 'activo',
-        carga_historica: form.carga_historica,
+        carga_historica: false,
       }).select().single()
       if (error) throw error
 
-      const c1 = primeraCuota(monto, tasa, form.frecuencia, form.fecha_inicio)
+      const c1 = primeraCuota(monto, tasa, form.frecuencia, form.fecha_inicio, form.primer_vencimiento || null)
       const { error: errCuotas } = await supabase.from('cuotas').insert({ ...c1, prestamo_id: prestamo.id })
       if (errCuotas) throw errCuotas
 
@@ -91,6 +94,13 @@ export default function PrestamosPage() {
   const interesPeriodo = form.monto && form.tasa_interes
     ? (parseFloat(form.monto) * (parseFloat(form.tasa_interes) / 100)) || 0
     : 0
+
+  const diasPeriodo = DIAS_FRECUENCIA[form.frecuencia]
+  const diasStub = form.primer_vencimiento ? diasEntre(form.fecha_inicio, form.primer_vencimiento) : 0
+  const esProrrateo = diasStub > 0 && diasStub < diasPeriodo
+  const interesPrimeraCuota = esProrrateo
+    ? Math.round(parseFloat(form.monto) * (parseFloat(form.tasa_interes) / 100) * (diasStub / diasPeriodo) * 100) / 100
+    : interesPeriodo
 
   const prestamoActivoCliente = form.cliente_id
     ? prestamos.find(p => p.cliente_id === parseInt(form.cliente_id) && (p.estado === 'activo' || p.estado === 'en_mora'))
@@ -215,23 +225,24 @@ export default function PrestamosPage() {
                 </div>
               </div>
               <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Primer vencimiento (opcional)</label>
+                <input type="date" value={form.primer_vencimiento} onChange={e => f('primer_vencimiento', e.target.value)}
+                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+                <p className="text-[11px] text-slate-400 mt-1">Para alinear la primera cuota con otro ciclo de pago. El interés de esa cuota se prorratea por días.</p>
+              </div>
+              <div>
                 <label className="block text-[11px] font-bold text-slate-500 mb-1">Notas (opcional)</label>
                 <input value={form.notas} onChange={e => f('notas', e.target.value)}
                   className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
               </div>
 
-              <label className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 cursor-pointer">
-                <input type="checkbox" checked={form.carga_historica} onChange={e => f('carga_historica', e.target.checked)}
-                  className="mt-0.5" />
-                <span className="text-[12px] text-amber-800">
-                  <b>Carga histórica</b> — préstamo viejo que ya se pagó a tiempo. Pausa el cálculo de mora/capitalización
-                  hasta que registres los pagos pasados y lo desactives en el detalle del préstamo.
-                </span>
-              </label>
-
               {interesPeriodo > 0 && (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-[12px] text-emerald-800">
-                  Interés por periodo: <b>{fmtMoney(interesPeriodo)}</b>. Se genera una cuota nueva cada {form.frecuencia === 'quincenal' ? 'quincena' : form.frecuencia === 'semanal' ? 'semana' : 'mes'} hasta que se cancele el capital con abonos.
+                  {esProrrateo ? (
+                    <>Primera cuota prorrateada ({diasStub} días): <b>{fmtMoney(interesPrimeraCuota)}</b> de interés. Desde la siguiente, interés por periodo completo: <b>{fmtMoney(interesPeriodo)}</b>.</>
+                  ) : (
+                    <>Interés por periodo: <b>{fmtMoney(interesPeriodo)}</b>. Se genera una cuota nueva cada {form.frecuencia === 'quincenal' ? 'quincena' : form.frecuencia === 'semanal' ? 'semana' : 'mes'} hasta que se cancele el capital con abonos.</>
+                  )}
                 </div>
               )}
 
