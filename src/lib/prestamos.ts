@@ -40,6 +40,42 @@ export function addDias(fecha: string, dias: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+/**
+ * La quincena real panameña no son 15 dias fijos: es 1-15 y 16-fin de mes,
+ * y el segundo tramo tiene 13 a 16 dias segun el mes. Sumar 15 dias a secas
+ * (como hace addDias) hace que la fecha se atrase cada vez que el tramo
+ * 16-fin de mes tiene mas de 15 dias (p. ej. julio, con 31 dias).
+ */
+function siguienteQuincena(fecha: string): string {
+  const d = new Date(fecha + 'T00:00:00')
+  if (d.getDate() === 15) {
+    const finDeMes = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+    return finDeMes.toISOString().slice(0, 10)
+  }
+  const quince = new Date(d.getFullYear(), d.getMonth() + 1, 15)
+  return quince.toISOString().slice(0, 10)
+}
+
+function anteriorQuincena(fecha: string): string {
+  const d = new Date(fecha + 'T00:00:00')
+  if (d.getDate() === 15) {
+    const finDeMesAnterior = new Date(d.getFullYear(), d.getMonth(), 0)
+    return finDeMesAnterior.toISOString().slice(0, 10)
+  }
+  const quince = new Date(d.getFullYear(), d.getMonth(), 15)
+  return quince.toISOString().slice(0, 10)
+}
+
+/** Siguiente fecha de vencimiento segun la frecuencia (la quincenal usa el calendario real, no +15 dias). */
+export function siguienteVencimiento(frecuencia: Frecuencia, fecha: string): string {
+  return frecuencia === 'quincenal' ? siguienteQuincena(fecha) : addDias(fecha, DIAS_FRECUENCIA[frecuencia])
+}
+
+/** Inicio del periodo cuyo vencimiento es `fecha`, segun la frecuencia. */
+export function anteriorVencimiento(frecuencia: Frecuencia, fecha: string): string {
+  return frecuencia === 'quincenal' ? anteriorQuincena(fecha) : addDias(fecha, -DIAS_FRECUENCIA[frecuencia])
+}
+
 export interface CuotaNueva {
   numero: number
   fecha_vencimiento: string
@@ -81,7 +117,7 @@ export function primeraCuota(
   monto: number, tasaInteres: number, frecuencia: Frecuencia, fechaInicio: string,
   primerVencimiento?: string | null,
 ): CuotaNueva {
-  const vence = primerVencimiento || addDias(fechaInicio, DIAS_FRECUENCIA[frecuencia])
+  const vence = primerVencimiento || siguienteVencimiento(frecuencia, fechaInicio)
   const diasPeriodo = DIAS_FRECUENCIA[frecuencia]
   const diasStub = diasEntre(fechaInicio, vence)
   const esProrrateo = diasStub > 0 && diasStub < diasPeriodo
@@ -110,12 +146,11 @@ export function cuotasFaltantesHastaHoy(
   const hoy = new Date().toISOString().slice(0, 10)
   // Ya hay una cuota futura generada (la próxima por venir): no crear otra encima.
   if (ultimaFechaVencimiento > hoy) return []
-  const dias = DIAS_FRECUENCIA[frecuencia]
   const nuevas: CuotaNueva[] = []
   let numero = ultimoNumero
   let fecha = ultimaFechaVencimiento
   while (true) {
-    const siguiente = addDias(fecha, dias)
+    const siguiente = siguienteVencimiento(frecuencia, fecha)
     numero += 1
     fecha = siguiente
     nuevas.push(cuota(numero, fecha, saldoCapital, tasaInteres))
@@ -195,10 +230,10 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
     // de periodo completo como siempre.
     const abiertas = cuotasList.filter((c: any) => c.estado === 'pendiente' || c.estado === 'atrasada')
     const tasa = p.tasa_interes / 100
-    const diasPeriodo = DIAS_FRECUENCIA[p.frecuencia as Frecuencia]
     const [proxima, ...resto] = abiertas
     if (proxima) {
-      const inicioPeriodo = addDias(proxima.fecha_vencimiento, -diasPeriodo)
+      const inicioPeriodo = anteriorVencimiento(p.frecuencia as Frecuencia, proxima.fecha_vencimiento)
+      const diasPeriodo = diasEntre(inicioPeriodo, proxima.fecha_vencimiento)
       const desembolsosPeriodo = (desembolsosList || []).filter((d: any) => d.fecha > inicioPeriodo && d.fecha <= proxima.fecha_vencimiento)
       const totalDesembolsosPeriodo = desembolsosPeriodo.reduce((s: number, d: any) => s + Number(d.monto), 0)
       const saldoBase = Math.round((saldo - totalDesembolsosPeriodo) * 100) / 100

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, soloDecimal, addDias, diasEntre, interesProrrateado, DIAS_FRECUENCIA } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, soloDecimal, anteriorVencimiento, diasEntre, interesProrrateado } from '@/lib/prestamos'
 import type { Cliente, Prestamo, Cuota, Pago, Desembolso, Frecuencia, FormaPago } from '@/types'
 
 const ESTADO_CUOTA_STYLE: Record<string, string> = {
@@ -247,9 +247,9 @@ export default function PrestamoDetallePage() {
   // Si el desembolso cayó a mitad del período de alguna cuota, muestra cómo se
   // prorrateó su interés por días (mismo cálculo que aplica reconciliarPrestamosVencidos).
   const prorrateoDesembolso = (d: Desembolso) => {
-    const diasPeriodo = DIAS_FRECUENCIA[prestamo.frecuencia]
-    const cuotaPeriodo = cuotas.find(c => d.fecha > addDias(c.fecha_vencimiento, -diasPeriodo) && d.fecha <= c.fecha_vencimiento)
+    const cuotaPeriodo = cuotas.find(c => d.fecha > anteriorVencimiento(prestamo.frecuencia, c.fecha_vencimiento) && d.fecha <= c.fecha_vencimiento)
     if (!cuotaPeriodo) return null
+    const diasPeriodo = diasEntre(anteriorVencimiento(prestamo.frecuencia, cuotaPeriodo.fecha_vencimiento), cuotaPeriodo.fecha_vencimiento)
     const diasStub = diasEntre(d.fecha, cuotaPeriodo.fecha_vencimiento)
     if (diasStub <= 0 || diasStub >= diasPeriodo) return null
     return { diasStub, diasPeriodo, interes: interesProrrateado(Number(d.monto), prestamo.tasa_interes, diasStub, diasPeriodo) }
