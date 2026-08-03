@@ -52,6 +52,9 @@ export default function SolicitarPage() {
             <div className="text-4xl">✅</div>
             <div className="text-[15px] font-bold text-[#0f172a]">¡Solicitud enviada!</div>
             <p className="text-[13px] text-slate-500">Pronto nos pondremos en contacto contigo para continuar.</p>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-left text-[12px] text-emerald-800">
+              📸 Para agilizar tu solicitud, envíanos por <strong>WhatsApp</strong> una foto de tu <strong>cédula</strong> (frente y reverso).
+            </div>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="px-8 py-7 space-y-3">
