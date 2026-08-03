@@ -48,12 +48,18 @@ export default function SolicitarPage() {
         </div>
 
         {enviado ? (
-          <div className="px-8 py-10 text-center space-y-3">
+          <div className="px-8 py-10 text-center space-y-4">
             <div className="text-4xl">✅</div>
-            <div className="text-[15px] font-bold text-[#0f172a]">¡Solicitud enviada!</div>
-            <p className="text-[13px] text-slate-500">Pronto nos pondremos en contacto contigo para continuar.</p>
-            <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-left text-[12px] text-emerald-800">
-              📸 Para agilizar tu solicitud, envíanos por <strong>WhatsApp</strong> una foto de tu <strong>cédula</strong> (frente y reverso).
+            <div>
+              <div className="text-[15px] font-bold text-[#0f172a]">¡Solicitud enviada!</div>
+              <p className="text-[13px] text-slate-500 mt-1">Pronto nos pondremos en contacto contigo para continuar.</p>
+            </div>
+            <div className="bg-emerald-50 rounded-xl px-5 py-4">
+              <div className="text-2xl mb-1.5">📸</div>
+              <p className="text-[13px] font-bold text-emerald-800">Un último paso</p>
+              <p className="text-[12px] text-emerald-700 mt-1 leading-relaxed">
+                Envíanos por WhatsApp una foto de tu cédula (frente y reverso) para agilizar tu solicitud.
+              </p>
             </div>
           </div>
         ) : (
