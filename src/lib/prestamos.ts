@@ -48,22 +48,30 @@ export function addDias(fecha: string, dias: number): string {
  */
 function siguienteQuincena(fecha: string): string {
   const d = new Date(fecha + 'T00:00:00')
+  // Fecha a mitad de la primera mitad (p. ej. un prestamo que arranca el dia 4):
+  // el siguiente limite es el 15 del mismo mes, no el 15 del mes que sigue.
+  if (d.getDate() < 15) {
+    const quince = new Date(d.getFullYear(), d.getMonth(), 15)
+    return quince.toISOString().slice(0, 10)
+  }
   if (d.getDate() === 15) {
     const finDeMes = new Date(d.getFullYear(), d.getMonth() + 1, 0)
     return finDeMes.toISOString().slice(0, 10)
   }
-  const quince = new Date(d.getFullYear(), d.getMonth() + 1, 15)
-  return quince.toISOString().slice(0, 10)
+  const quinceSiguiente = new Date(d.getFullYear(), d.getMonth() + 1, 15)
+  return quinceSiguiente.toISOString().slice(0, 10)
 }
 
 function anteriorQuincena(fecha: string): string {
   const d = new Date(fecha + 'T00:00:00')
-  if (d.getDate() === 15) {
-    const finDeMesAnterior = new Date(d.getFullYear(), d.getMonth(), 0)
-    return finDeMesAnterior.toISOString().slice(0, 10)
+  // Vencimiento el 15 -> el periodo (1-15) arranco el 1 del mismo mes.
+  if (d.getDate() <= 15) {
+    const primero = new Date(d.getFullYear(), d.getMonth(), 1)
+    return primero.toISOString().slice(0, 10)
   }
-  const quince = new Date(d.getFullYear(), d.getMonth(), 15)
-  return quince.toISOString().slice(0, 10)
+  // Vencimiento fin de mes -> el periodo (16-fin) arranco el 16 del mismo mes.
+  const dieciseis = new Date(d.getFullYear(), d.getMonth(), 16)
+  return dieciseis.toISOString().slice(0, 10)
 }
 
 /** Siguiente fecha de vencimiento segun la frecuencia (la quincenal usa el calendario real, no +15 dias). */
@@ -118,7 +126,7 @@ export function primeraCuota(
   primerVencimiento?: string | null,
 ): CuotaNueva {
   const vence = primerVencimiento || siguienteVencimiento(frecuencia, fechaInicio)
-  const diasPeriodo = DIAS_FRECUENCIA[frecuencia]
+  const diasPeriodo = diasEntre(anteriorVencimiento(frecuencia, vence), vence)
   const diasStub = diasEntre(fechaInicio, vence)
   const esProrrateo = diasStub > 0 && diasStub < diasPeriodo
 
@@ -179,7 +187,7 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
   const hoy = new Date().toISOString().slice(0, 10)
   const limiteCapitalizacion = addDias(hoy, -DIAS_GRACIA_CAPITALIZACION)
 
-  let query = supabase.from('prestamos').select('id,monto,tasa_interes,frecuencia,estado,carga_historica').in('estado', ['activo', 'en_mora'])
+  let query = supabase.from('prestamos').select('id,monto,tasa_interes,frecuencia,estado,carga_historica,fecha_inicio').in('estado', ['activo', 'en_mora'])
   if (prestamoId) query = query.eq('id', prestamoId)
   const { data: prestamosList } = await query
   if (!prestamosList?.length) return
@@ -241,6 +249,15 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
       for (const d of desembolsosPeriodo) {
         const diasStub = Math.max(0, Math.min(diasPeriodo, diasEntre(d.fecha, proxima.fecha_vencimiento)))
         nuevoInteres = Math.round((nuevoInteres + interesProrrateado(Number(d.monto), p.tasa_interes, diasStub, diasPeriodo)) * 100) / 100
+      }
+      // La cuota #1 no tiene su capital inicial en `desembolsos` (ese es el monto
+      // del prestamo en si): si el prestamo arranco a mitad del periodo de su
+      // propia primera cuota, se prorratea igual que hace primeraCuota() al crearlo.
+      if (proxima.numero === 1 && p.fecha_inicio > inicioPeriodo) {
+        const diasStubInicial = Math.max(0, Math.min(diasPeriodo, diasEntre(p.fecha_inicio, proxima.fecha_vencimiento)))
+        if (diasStubInicial > 0 && diasStubInicial < diasPeriodo) {
+          nuevoInteres = interesProrrateado(saldoBase, p.tasa_interes, diasStubInicial, diasPeriodo)
+        }
       }
       if (nuevoInteres !== proxima.interes) {
         await supabase.from('cuotas').update({
