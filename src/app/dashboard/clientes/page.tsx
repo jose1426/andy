@@ -5,6 +5,17 @@ import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
 import type { Cliente } from '@/types'
 
+interface ClienteDocumento {
+  id: number
+  cliente_id: number
+  nombre: string
+  path: string
+  created_at: string
+}
+
+const BUCKET_DOCUMENTOS = 'prestamos-clientes'
+const esImagen = (nombre: string) => /\.(png|jpe?g|webp|gif|heic|heif)$/i.test(nombre)
+
 function emptyForm(): Omit<Cliente, 'id' | 'created_at'> {
   return { nombre: '', apellido: '', cedula: '', telefono: '', direccion: '', email: '', referencia: '', activo: true }
 }
@@ -19,6 +30,9 @@ export default function ClientesPage() {
   const [form, setForm] = useState(emptyForm())
   const [deleteRow, setDeleteRow] = useState<Cliente | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [documentos, setDocumentos] = useState<ClienteDocumento[]>([])
+  const [docUrls, setDocUrls] = useState<Record<number, string>>({})
+  const [subiendo, setSubiendo] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -35,14 +49,58 @@ export default function ClientesPage() {
     return !search || txt.includes(search.toLowerCase())
   })
 
-  const openNew = () => { setEditRow(null); setForm(emptyForm()); setModal(true) }
+  const openNew = () => { setEditRow(null); setForm(emptyForm()); setDocumentos([]); setDocUrls({}); setModal(true) }
   const openEdit = (c: Cliente) => {
     setEditRow(c)
     setForm({ nombre: c.nombre, apellido: c.apellido, cedula: c.cedula, telefono: c.telefono, direccion: c.direccion, email: c.email, referencia: c.referencia, activo: c.activo })
     setModal(true)
+    cargarDocumentos(c.id)
   }
-  const closeModal = () => { setModal(false); setEditRow(null) }
+  const closeModal = () => { setModal(false); setEditRow(null); setDocumentos([]); setDocUrls({}) }
   const f = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(prev => ({ ...prev, [k]: v }))
+
+  const cargarDocumentos = async (clienteId: number) => {
+    const { data, error } = await supabase.from('cliente_documentos').select('*').eq('cliente_id', clienteId).order('created_at')
+    if (error) { toast.error(error.message); return }
+    const docs = (data || []) as ClienteDocumento[]
+    setDocumentos(docs)
+    const urls: Record<number, string> = {}
+    await Promise.all(docs.map(async d => {
+      const { data: signed } = await supabase.storage.from(BUCKET_DOCUMENTOS).createSignedUrl(d.path, 3600)
+      if (signed?.signedUrl) urls[d.id] = signed.signedUrl
+    }))
+    setDocUrls(urls)
+  }
+
+  const subirDocumentos = async (files: FileList | null) => {
+    if (!files?.length || !editRow) return
+    setSubiendo(true)
+    try {
+      for (const file of Array.from(files)) {
+        const path = `cliente-${editRow.id}/${Date.now()}-${file.name}`
+        const { error: errUp } = await supabase.storage.from(BUCKET_DOCUMENTOS).upload(path, file)
+        if (errUp) throw errUp
+        const { error: errIns } = await supabase.from('cliente_documentos').insert({ cliente_id: editRow.id, nombre: file.name, path })
+        if (errIns) throw errIns
+      }
+      toast.success('Documento(s) agregado(s)')
+      cargarDocumentos(editRow.id)
+    } catch (e: any) {
+      toast.error('Error: ' + e.message)
+    } finally {
+      setSubiendo(false)
+    }
+  }
+
+  const eliminarDocumento = async (doc: ClienteDocumento) => {
+    if (!window.confirm(`¿Eliminar "${doc.nombre}"?`)) return
+    const { error: errStorage } = await supabase.storage.from(BUCKET_DOCUMENTOS).remove([doc.path])
+    if (errStorage) { toast.error(errStorage.message); return }
+    const { error } = await supabase.from('cliente_documentos').delete().eq('id', doc.id)
+    if (error) { toast.error(error.message); return }
+    setDocumentos(prev => prev.filter(d => d.id !== doc.id))
+    toast.success('Documento eliminado')
+  }
 
   const save = async () => {
     if (!form.nombre.trim()) { toast.error('Ingrese el nombre.'); return }
@@ -222,6 +280,42 @@ export default function ClientesPage() {
                     className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
                 </div>
               </div>
+
+              <div className="pt-1 border-t border-[#f1f5f9]">
+                <label className="block text-[11px] font-bold text-slate-500 mb-1.5 mt-2">📎 Cédula / Documentos</label>
+                {!editRow ? (
+                  <p className="text-[12px] text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    Guarda el cliente primero para poder adjuntar fotos o documentos.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {documentos.length > 0 && (
+                      <div className="grid grid-cols-3 gap-2">
+                        {documentos.map(d => (
+                          <div key={d.id} className="relative border border-[#e2e8f0] rounded-lg overflow-hidden group">
+                            <a href={docUrls[d.id] || '#'} target="_blank" rel="noopener noreferrer" className="block">
+                              {esImagen(d.nombre) && docUrls[d.id] ? (
+                                <img src={docUrls[d.id]} alt={d.nombre} className="w-full h-20 object-cover" />
+                              ) : (
+                                <div className="w-full h-20 flex items-center justify-center bg-slate-50 text-2xl">📄</div>
+                              )}
+                            </a>
+                            <p className="text-[10px] text-slate-500 px-1.5 py-1 truncate" title={d.nombre}>{d.nombre}</p>
+                            <button type="button" onClick={() => eliminarDocumento(d)} title="Eliminar"
+                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center opacity-90 hover:opacity-100">✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <label className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border-2 border-dashed border-emerald-300 bg-emerald-50 text-emerald-700 text-[12px] font-bold cursor-pointer hover:bg-emerald-100 ${subiendo ? 'opacity-60 pointer-events-none' : ''}`}>
+                      {subiendo ? '⏳ Subiendo…' : '📷 Agregar foto o documento'}
+                      <input type="file" accept="image/*,application/pdf" capture="environment" multiple className="hidden"
+                        onChange={e => subirDocumentos(e.target.files)} />
+                    </label>
+                  </div>
+                )}
+              </div>
+
               <div className="flex justify-end gap-2.5 pt-2">
                 <button onClick={closeModal} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
                 <button onClick={save} disabled={saving} className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold disabled:opacity-60">
