@@ -130,7 +130,7 @@ export default function SolicitarPage() {
 
         <div className="px-8 pb-5 text-center text-[11px] text-slate-400 space-y-1.5">
           <div>
-            ¿Ya sos cliente?{' '}
+            ¿Eres cliente nuestro?{' '}
             <Link href="/portal/login" className="text-emerald-700 font-semibold hover:underline">
               Entrá a tu portal
             </Link>
