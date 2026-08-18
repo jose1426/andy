@@ -30,15 +30,18 @@ function linkWhatsappResultado(s: Solicitud): string {
   return `https://wa.me/${tel}?text=${encodeURIComponent(mensajeResultado(s))}`
 }
 
-function mensajeAprobacionConTerminos(s: Solicitud, monto: number, tasa: number, frecuencia: Frecuencia): string {
+function mensajeAprobacionConTerminos(s: Solicitud, monto: number, tasa: number, frecuencia: Frecuencia, pin: string): string {
   const nombreCompleto = `${s.nombre} ${s.apellido ?? ''}`.trim()
   const periodo = PERIODO_LABEL[frecuencia]
   const cuota = Math.round(monto * (tasa / 100) * 100) / 100
+  const bloquePin = pin
+    ? `\n\n🔐 Para consultar tu préstamo entra a https://andy-eight.vercel.app/portal/login con tu cédula y este PIN: *${pin}*`
+    : ''
   return `🎉 ¡Buenas noticias, ${nombreCompleto}! Tu solicitud de préstamo fue *aprobada* con estos términos:\n\n` +
     `💰 Monto: ${fmtMoney(monto)}\n` +
     `📈 Interés: ${tasa}% por ${periodo}\n` +
     `💵 Cuota estimada cada ${periodo}: ${fmtMoney(cuota)}\n\n` +
-    `¿Estás de acuerdo con estas condiciones? Respóndenos para continuar. 🙌`
+    `¿Estás de acuerdo con estas condiciones? Respóndenos para continuar. 🙌${bloquePin}`
 }
 
 function emptyForm() {
@@ -53,6 +56,7 @@ export default function SolicitudesPage() {
   const [montoForm, setMontoForm] = useState('')
   const [tasaForm, setTasaForm] = useState('')
   const [frecuenciaForm, setFrecuenciaForm] = useState<Frecuencia>('quincenal')
+  const [pinForm, setPinForm] = useState('')
 
   const [editRow, setEditRow] = useState<Solicitud | null>(null)
   const [form, setForm] = useState(emptyForm())
@@ -74,6 +78,7 @@ export default function SolicitudesPage() {
     setMontoForm(s.monto_solicitado ? String(s.monto_solicitado) : '')
     setTasaForm('')
     setFrecuenciaForm('quincenal')
+    setPinForm('')
     setAprobando(s)
   }
 
@@ -84,6 +89,7 @@ export default function SolicitudesPage() {
     const tasa = parseFloat(tasaForm)
     if (!monto || monto <= 0) { toast.error('Ingrese un monto válido.'); return }
     if (!tasa || tasa <= 0) { toast.error('Ingrese una tasa de interés válida.'); return }
+    if (pinForm && !/^\d{4,6}$/.test(pinForm)) { toast.error('El PIN debe tener entre 4 y 6 dígitos.'); return }
 
     setProcesando(s.id)
     try {
@@ -108,6 +114,11 @@ export default function SolicitudesPage() {
         .update({ estado: 'aprobada', cliente_id: clienteId }).eq('id', s.id)
       if (errSol) throw errSol
 
+      if (pinForm) {
+        const { error: errPin } = await supabase.rpc('portal_set_pin', { p_cliente_id: clienteId, p_pin: pinForm })
+        if (errPin) toast.error('El préstamo se creó, pero el PIN no se pudo guardar: ' + errPin.message)
+      }
+
       const fechaInicio = new Date().toISOString().slice(0, 10)
       const { data: prestamo, error: errPre } = await supabase.from('prestamos').insert({
         cliente_id: clienteId, monto, tasa_interes: tasa, frecuencia: frecuenciaForm,
@@ -121,7 +132,7 @@ export default function SolicitudesPage() {
 
       if (s.telefono) {
         const tel = telefonoWhatsapp(s.telefono)
-        const mensaje = mensajeAprobacionConTerminos(s, monto, tasa, frecuenciaForm)
+        const mensaje = mensajeAprobacionConTerminos(s, monto, tasa, frecuenciaForm, pinForm)
         window.open(`https://wa.me/${tel}?text=${encodeURIComponent(mensaje)}`, '_blank', 'noopener,noreferrer')
       }
 
@@ -421,6 +432,20 @@ export default function SolicitudesPage() {
                   Cuota estimada cada {PERIODO_LABEL[frecuenciaForm]}: <b>{fmtMoney(parseFloat(montoForm) * (parseFloat(tasaForm) / 100))}</b>
                 </div>
               )}
+
+              <div className="pt-1 border-t border-[#f1f5f9]">
+                <label className="block text-[11px] font-bold text-slate-500 mb-1 mt-2">🔐 PIN del Portal (opcional)</label>
+                <input
+                  value={pinForm}
+                  onChange={e => setPinForm(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputMode="numeric"
+                  placeholder="4 a 6 dígitos — se envía en el mensaje de WhatsApp"
+                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400 tracking-[0.2em]"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Déjalo vacío si preferís asignarlo después desde Clientes.
+                </p>
+              </div>
 
               <div className="flex justify-end gap-2.5 pt-2">
                 <button onClick={() => setAprobando(null)} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
