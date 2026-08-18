@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase/client'
-import { fmtMoney, fmtFecha, FORMA_PAGO_LABEL, FRECUENCIA_LABEL } from '@/lib/prestamos'
-import type { EstadoPrestamo, EstadoCuota, Frecuencia, FormaPago } from '@/types'
+import { fmtMoney, fmtFecha, soloDecimal, FORMA_PAGO_LABEL, FRECUENCIA_LABEL } from '@/lib/prestamos'
+import type { EstadoPrestamo, EstadoCuota, EstadoSolicitud, Frecuencia, FormaPago } from '@/types'
 
 const TOKEN_KEY = 'portal_session_token'
 
@@ -31,9 +32,25 @@ interface DashPrestamo {
   cuotas: DashCuota[]
   pagos: DashPago[]
 }
+interface DashSolicitud {
+  id: number
+  monto_solicitado: number | null
+  estado: EstadoSolicitud
+  created_at: string
+}
 interface Dashboard {
   cliente: { id: number; nombre: string; apellido: string | null }
   prestamos: DashPrestamo[]
+  solicitudes: DashSolicitud[]
+}
+
+const ESTADO_SOLICITUD_STYLE: Record<EstadoSolicitud, string> = {
+  pendiente: 'bg-amber-100 text-amber-800 border-amber-300',
+  aprobada: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+  rechazada: 'bg-red-100 text-red-800 border-red-300',
+}
+const ESTADO_SOLICITUD_LABEL: Record<EstadoSolicitud, string> = {
+  pendiente: 'Pendiente de revisión', aprobada: 'Aprobada', rechazada: 'Rechazada',
 }
 
 const ESTADO_PRESTAMO_STYLE: Record<EstadoPrestamo, string> = {
@@ -61,6 +78,10 @@ export default function PortalPage() {
   const [data, setData] = useState<Dashboard | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [modalSolicitud, setModalSolicitud] = useState(false)
+  const [montoSolicitud, setMontoSolicitud] = useState('')
+  const [referenciaSolicitud, setReferenciaSolicitud] = useState('')
+  const [enviandoSolicitud, setEnviandoSolicitud] = useState(false)
 
   const cerrarSesion = useCallback(async (redirigir = true) => {
     const token = localStorage.getItem(TOKEN_KEY)
@@ -69,21 +90,40 @@ export default function PortalPage() {
     if (redirigir) router.replace('/portal/login')
   }, [router])
 
-  useEffect(() => {
-    (async () => {
-      const token = localStorage.getItem(TOKEN_KEY)
-      if (!token) { router.replace('/portal/login'); return }
-      const { data: dash, error: rpcError } = await supabase.rpc('portal_get_dashboard', { p_token: token })
-      if (rpcError) {
-        setError('Tu sesión expiró. Ingresa de nuevo.')
-        setLoading(false)
-        setTimeout(() => cerrarSesion(), 1500)
-        return
-      }
-      setData(dash as Dashboard)
+  const cargarDashboard = useCallback(async () => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (!token) { router.replace('/portal/login'); return }
+    const { data: dash, error: rpcError } = await supabase.rpc('portal_get_dashboard', { p_token: token })
+    if (rpcError) {
+      setError('Tu sesión expiró. Ingresa de nuevo.')
       setLoading(false)
-    })()
+      setTimeout(() => cerrarSesion(), 1500)
+      return
+    }
+    setData(dash as Dashboard)
+    setLoading(false)
   }, [router, cerrarSesion])
+
+  useEffect(() => { cargarDashboard() }, [cargarDashboard])
+
+  const abrirSolicitud = () => { setMontoSolicitud(''); setReferenciaSolicitud(''); setModalSolicitud(true) }
+
+  const enviarSolicitud = async () => {
+    const monto = parseFloat(montoSolicitud)
+    if (!monto || monto <= 0) { toast.error('Ingresa un monto válido.'); return }
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (!token) { router.replace('/portal/login'); return }
+
+    setEnviandoSolicitud(true)
+    const { error: rpcError } = await supabase.rpc('portal_solicitar_prestamo', {
+      p_token: token, p_monto: monto, p_referencia: referenciaSolicitud.trim() || null,
+    })
+    setEnviandoSolicitud(false)
+    if (rpcError) { toast.error(rpcError.message); return }
+    toast.success('Solicitud enviada. Te avisaremos cuando la revisemos.')
+    setModalSolicitud(false)
+    cargarDashboard()
+  }
 
   if (loading) {
     return (
@@ -117,6 +157,36 @@ export default function PortalPage() {
       </div>
 
       <div className="max-w-2xl mx-auto p-4 space-y-4">
+        <button
+          onClick={abrirSolicitud}
+          className="w-full py-3 rounded-xl bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[14px] font-bold shadow-sm hover:opacity-90 transition-opacity"
+        >
+          ＋ Solicitar otro préstamo
+        </button>
+
+        {data.solicitudes.length > 0 && (
+          <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-[#f1f5f9] text-[11px] font-bold text-slate-500 uppercase">
+              Mis solicitudes
+            </div>
+            <div className="divide-y divide-[#f1f5f9]">
+              {data.solicitudes.map(s => (
+                <div key={s.id} className="px-5 py-3 flex items-center justify-between">
+                  <div>
+                    <div className="text-[13px] font-semibold text-[#0f172a]">
+                      {s.monto_solicitado ? fmtMoney(s.monto_solicitado) : '—'}
+                    </div>
+                    <div className="text-[11px] text-slate-400">{fmtFecha(s.created_at.slice(0, 10))}</div>
+                  </div>
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${ESTADO_SOLICITUD_STYLE[s.estado]}`}>
+                    {ESTADO_SOLICITUD_LABEL[s.estado]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {data.prestamos.length === 0 && (
           <div className="bg-white rounded-2xl border border-[#e2e8f0] p-6 text-center text-slate-400 text-[13px]">
             No tenés préstamos registrados todavía.
@@ -200,6 +270,38 @@ export default function PortalPage() {
           )
         })}
       </div>
+
+      {modalSolicitud && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={e => e.target === e.currentTarget && setModalSolicitud(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-slideUp">
+            <div className="bg-gradient-to-r from-[#0f172a] to-[#059669] px-6 py-4 flex items-center justify-between">
+              <span className="text-white font-bold text-[15px]">＋ Solicitar otro préstamo</span>
+              <button onClick={() => setModalSolicitud(false)} className="text-white/80 hover:text-white text-lg font-bold">✕</button>
+            </div>
+            <div className="p-6 space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto que necesitas</label>
+                <input type="text" inputMode="decimal" value={montoSolicitud} onChange={e => setMontoSolicitud(soloDecimal(e.target.value))}
+                  placeholder="B/. 0.00" autoFocus
+                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Referencia (opcional)</label>
+                <input value={referenciaSolicitud} onChange={e => setReferenciaSolicitud(e.target.value)}
+                  placeholder="Nombre y teléfono de alguien que te recomiende"
+                  className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
+              </div>
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button onClick={() => setModalSolicitud(false)} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
+                <button onClick={enviarSolicitud} disabled={enviandoSolicitud}
+                  className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold disabled:opacity-60">
+                  {enviandoSolicitud ? '⏳ Enviando…' : '📨 Enviar solicitud'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
