@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, FormEvent } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { soloDecimal } from '@/lib/prestamos'
 
@@ -127,8 +128,14 @@ export default function SolicitarPage() {
           </form>
         )}
 
-        <div className="px-8 pb-5 text-center text-[11px] text-slate-400">
-          Préstamos Xpress
+        <div className="px-8 pb-5 text-center text-[11px] text-slate-400 space-y-1.5">
+          <div>
+            ¿Ya sos cliente?{' '}
+            <Link href="/portal/login" className="text-emerald-700 font-semibold hover:underline">
+              Entrá a tu portal
+            </Link>
+          </div>
+          <div>Préstamos Xpress</div>
         </div>
       </div>
     </div>

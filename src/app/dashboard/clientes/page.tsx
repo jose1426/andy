@@ -33,10 +33,14 @@ export default function ClientesPage() {
   const [documentos, setDocumentos] = useState<ClienteDocumento[]>([])
   const [docUrls, setDocUrls] = useState<Record<number, string>>({})
   const [subiendo, setSubiendo] = useState(false)
+  const [pinInput, setPinInput] = useState('')
+  const [savingPin, setSavingPin] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase.from('clientes').select('*').order('nombre')
+    const { data, error } = await supabase.from('clientes')
+      .select('id,nombre,apellido,cedula,telefono,direccion,email,referencia,activo,created_at,pin_set_at')
+      .order('nombre')
     setLoading(false)
     if (error) { toast.error(error.message); return }
     setClientes((data || []) as Cliente[])
@@ -56,7 +60,7 @@ export default function ClientesPage() {
     setModal(true)
     cargarDocumentos(c.id)
   }
-  const closeModal = () => { setModal(false); setEditRow(null); setDocumentos([]); setDocUrls({}) }
+  const closeModal = () => { setModal(false); setEditRow(null); setDocumentos([]); setDocUrls({}); setPinInput('') }
   const f = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(prev => ({ ...prev, [k]: v }))
 
   const cargarDocumentos = async (clienteId: number) => {
@@ -122,6 +126,20 @@ export default function ClientesPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  const guardarPin = async () => {
+    if (!editRow) return
+    if (!/^\d{4,6}$/.test(pinInput)) { toast.error('El PIN debe tener entre 4 y 6 dígitos.'); return }
+    setSavingPin(true)
+    const { error } = await supabase.rpc('portal_set_pin', { p_cliente_id: editRow.id, p_pin: pinInput })
+    setSavingPin(false)
+    if (error) { toast.error(error.message); return }
+    toast.success('PIN guardado. Comunícaselo al cliente por WhatsApp o en persona.')
+    setPinInput('')
+    const now = new Date().toISOString()
+    setEditRow(prev => prev ? { ...prev, pin_set_at: now } : prev)
+    setClientes(prev => prev.map(c => c.id === editRow.id ? { ...c, pin_set_at: now } : c))
   }
 
   const toggleActivo = async (c: Cliente) => {
@@ -279,6 +297,39 @@ export default function ClientesPage() {
                   <input value={form.referencia ?? ''} onChange={e => f('referencia', e.target.value)}
                     className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
                 </div>
+              </div>
+
+              <div className="pt-1 border-t border-[#f1f5f9]">
+                <label className="block text-[11px] font-bold text-slate-500 mb-1.5 mt-2">🔐 PIN del Portal del Cliente</label>
+                {!editRow ? (
+                  <p className="text-[12px] text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                    Guarda el cliente primero para poder asignarle un PIN.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    <p className="text-[12px] text-slate-500">
+                      {editRow.pin_set_at
+                        ? `PIN configurado el ${new Date(editRow.pin_set_at).toLocaleDateString('es-PA')}. Escribe uno nuevo para reemplazarlo.`
+                        : 'Este cliente todavía no tiene PIN — no puede entrar al portal.'}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={pinInput}
+                        onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        inputMode="numeric"
+                        placeholder="4 a 6 dígitos"
+                        className="flex-1 px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400 tracking-[0.2em]"
+                      />
+                      <button type="button" onClick={guardarPin} disabled={savingPin || !pinInput}
+                        className="px-3.5 py-2 rounded-lg bg-[#0f172a] text-white text-[12px] font-bold disabled:opacity-50 whitespace-nowrap">
+                        {savingPin ? '⏳' : '💾 Guardar PIN'}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Comunicáselo por WhatsApp o en persona — no queda visible en ningún lado del sistema.
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div className="pt-1 border-t border-[#f1f5f9]">

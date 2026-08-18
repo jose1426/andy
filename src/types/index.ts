@@ -9,6 +9,7 @@ export interface Cliente {
   referencia: string | null
   activo: boolean
   created_at: string
+  pin_set_at?: string | null
 }
 
 export type EstadoPrestamo = 'activo' | 'pagado' | 'en_mora' | 'cancelado'
