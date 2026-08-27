@@ -18,19 +18,23 @@ function diasAtraso(fechaVencimiento: string): number {
   return Math.max(0, Math.floor((hoy.getTime() - venc.getTime()) / 86400000))
 }
 
-/** Mensaje de cobro para clientes morosos (cuota atrasada), listo para enviar por WhatsApp. */
-function mensajeMoroso(c: CuotaRow): string {
+/** Aviso de pago por WhatsApp para cualquier cliente con cuota pendiente (al día o atrasada). */
+function mensajeAvisoPago(c: CuotaRow): string {
   const nombreCompleto = `${c.prestamo.cliente.nombre} ${c.prestamo.cliente.apellido ?? ''}`.trim()
   const dias = diasAtraso(c.fecha_vencimiento)
   const saldo = fmtMoney(Math.max(0, c.monto_cuota - c.monto_pagado))
-  return `Hola ${nombreCompleto} 👋, te escribimos para recordarte que tu cuota #${c.numero} venció el ${fmtFecha(c.fecha_vencimiento)}` +
-    `${dias > 0 ? ` (hace ${dias} día${dias === 1 ? '' : 's'})` : ''} y tiene un saldo pendiente de *${saldo}*. ` +
-    `Por favor ponte al día lo antes posible para evitar más atrasos. ¡Gracias! 🙏`
+  if (dias > 0) {
+    return `Hola ${nombreCompleto} 👋, te escribimos para recordarte que tu cuota #${c.numero} venció el ${fmtFecha(c.fecha_vencimiento)} ` +
+      `(hace ${dias} día${dias === 1 ? '' : 's'}) y tiene un saldo pendiente de *${saldo}*. ` +
+      `Por favor ponte al día lo antes posible para evitar más atrasos. ¡Gracias! 🙏`
+  }
+  return `Hola ${nombreCompleto} 👋, te recordamos que tu cuota #${c.numero} vence el ${fmtFecha(c.fecha_vencimiento)} ` +
+    `por un monto de *${saldo}*. ¡Gracias por tu puntualidad! 🙏`
 }
 
-function linkWhatsappMoroso(c: CuotaRow): string {
+function linkWhatsappAvisoPago(c: CuotaRow): string {
   const tel = telefonoWhatsapp(c.prestamo.cliente.telefono)
-  return `https://wa.me/${tel}?text=${encodeURIComponent(mensajeMoroso(c))}`
+  return `https://wa.me/${tel}?text=${encodeURIComponent(mensajeAvisoPago(c))}`
 }
 
 interface PagoRow {
@@ -221,17 +225,15 @@ export default function CobrosPage() {
                       <button onClick={() => abrirPago(c)} className="px-3 py-1 rounded-md bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700">
                         💰 Cobrar
                       </button>
-                      {c.estado === 'atrasada' && (
-                        c.prestamo.cliente.telefono ? (
-                          <a href={linkWhatsappMoroso(c)} target="_blank" rel="noopener noreferrer"
-                            className="px-3 py-1 rounded-md bg-amber-500 text-white text-[11px] font-bold hover:bg-amber-600">
-                            📩 Mensaje
-                          </a>
-                        ) : (
-                          <span title="El cliente no tiene teléfono registrado" className="px-3 py-1 rounded-md bg-slate-100 text-slate-400 text-[11px] font-bold cursor-not-allowed">
-                            📩 Mensaje
-                          </span>
-                        )
+                      {c.prestamo.cliente.telefono ? (
+                        <a href={linkWhatsappAvisoPago(c)} target="_blank" rel="noopener noreferrer"
+                          className="px-3 py-1 rounded-md bg-amber-500 text-white text-[11px] font-bold hover:bg-amber-600">
+                          📩 Aviso
+                        </a>
+                      ) : (
+                        <span title="El cliente no tiene teléfono registrado" className="px-3 py-1 rounded-md bg-slate-100 text-slate-400 text-[11px] font-bold cursor-not-allowed">
+                          📩 Aviso
+                        </span>
                       )}
                     </div>
                   </td>
