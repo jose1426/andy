@@ -4,11 +4,37 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, reconciliarPrestamosVencidos, soloDecimal, FORMA_PAGO_LABEL } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, reconciliarPrestamosVencidos, soloDecimal, telefonoWhatsapp, FORMA_PAGO_LABEL } from '@/lib/prestamos'
 import type { Cuota, FormaPago } from '@/types'
 
 interface CuotaRow extends Cuota {
-  prestamo: { id: number; monto: number; tasa_interes: number; fecha_inicio: string; cliente: { nombre: string; apellido: string | null; cedula: string | null } }
+  prestamo: { id: number; monto: number; tasa_interes: number; fecha_inicio: string; cliente: { nombre: string; apellido: string | null; cedula: string | null; telefono: string | null } }
+}
+
+/** Días de atraso de una cuota respecto a hoy (0 si aún no vence). */
+function diasAtraso(fechaVencimiento: string): number {
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0)
+  const venc = new Date(fechaVencimiento + 'T00:00:00')
+  return Math.max(0, Math.floor((hoy.getTime() - venc.getTime()) / 86400000))
+}
+
+/** Aviso de pago por WhatsApp para cualquier cliente con cuota pendiente (al día o atrasada). */
+function mensajeAvisoPago(c: CuotaRow): string {
+  const nombreCompleto = `${c.prestamo.cliente.nombre} ${c.prestamo.cliente.apellido ?? ''}`.trim()
+  const dias = diasAtraso(c.fecha_vencimiento)
+  const saldo = fmtMoney(Math.max(0, c.monto_cuota - c.monto_pagado))
+  if (dias > 0) {
+    return `Hola ${nombreCompleto} 👋, te escribimos para recordarte que tu cuota #${c.numero} venció el ${fmtFecha(c.fecha_vencimiento)} ` +
+      `(hace ${dias} día${dias === 1 ? '' : 's'}) y tiene un saldo pendiente de *${saldo}*. ` +
+      `Por favor ponte al día lo antes posible para evitar más atrasos. ¡Gracias! 🙏`
+  }
+  return `Hola ${nombreCompleto} 👋, te recordamos que tu cuota #${c.numero} vence el ${fmtFecha(c.fecha_vencimiento)} ` +
+    `por un monto de *${saldo}*. ¡Gracias por tu puntualidad! 🙏`
+}
+
+function linkWhatsappAvisoPago(c: CuotaRow): string {
+  const tel = telefonoWhatsapp(c.prestamo.cliente.telefono)
+  return `https://wa.me/${tel}?text=${encodeURIComponent(mensajeAvisoPago(c))}`
 }
 
 interface PagoRow {
@@ -48,7 +74,7 @@ export default function CobrosPage() {
     await reconciliarPrestamosVencidos(supabase)
     const [cuotasRes, pagosRes] = await Promise.all([
       supabase.from('cuotas')
-        .select('*, prestamo:prestamos(id,monto,tasa_interes,fecha_inicio,cliente:clientes(nombre,apellido,cedula))')
+        .select('*, prestamo:prestamos(id,monto,tasa_interes,fecha_inicio,cliente:clientes(nombre,apellido,cedula,telefono))')
         .in('estado', ['pendiente', 'atrasada', 'parcial'])
         .order('fecha_vencimiento'),
       supabase.from('pagos')
@@ -195,9 +221,21 @@ export default function CobrosPage() {
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-center">
-                    <button onClick={() => abrirPago(c)} className="px-3 py-1 rounded-md bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700">
-                      💰 Cobrar
-                    </button>
+                    <div className="flex items-center justify-center gap-2">
+                      <button onClick={() => abrirPago(c)} className="px-3 py-1 rounded-md bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700">
+                        💰 Cobrar
+                      </button>
+                      {c.prestamo.cliente.telefono ? (
+                        <a href={linkWhatsappAvisoPago(c)} target="_blank" rel="noopener noreferrer"
+                          className="px-3 py-1 rounded-md bg-amber-500 text-white text-[11px] font-bold hover:bg-amber-600">
+                          📩 Aviso
+                        </a>
+                      ) : (
+                        <span title="El cliente no tiene teléfono registrado" className="px-3 py-1 rounded-md bg-slate-100 text-slate-400 text-[11px] font-bold cursor-not-allowed">
+                          📩 Aviso
+                        </span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
