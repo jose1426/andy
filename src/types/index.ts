@@ -26,6 +26,7 @@ export interface Prestamo {
   estado: EstadoPrestamo
   notas: string | null
   carga_historica: boolean
+  sin_prorrateo: boolean
   created_at: string
   cliente?: Cliente
 }

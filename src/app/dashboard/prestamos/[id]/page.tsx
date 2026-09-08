@@ -43,7 +43,7 @@ export default function PrestamoDetallePage() {
   const [savingDesem, setSavingDesem] = useState(false)
 
   const [modalEdit, setModalEdit] = useState(false)
-  const [editForm, setEditForm] = useState({ monto: '', tasa_interes: '', frecuencia: 'quincenal' as Frecuencia, fecha_inicio: '', notas: '', carga_historica: false })
+  const [editForm, setEditForm] = useState({ monto: '', tasa_interes: '', frecuencia: 'quincenal' as Frecuencia, fecha_inicio: '', notas: '', carga_historica: false, sin_prorrateo: false })
   const [savingEdit, setSavingEdit] = useState(false)
   const [finalizando, setFinalizando] = useState(false)
 
@@ -149,6 +149,7 @@ export default function PrestamoDetallePage() {
       fecha_inicio: prestamo.fecha_inicio,
       notas: prestamo.notas ?? '',
       carga_historica: prestamo.carga_historica,
+      sin_prorrateo: prestamo.sin_prorrateo ?? false,
     })
     setModalEdit(true)
   }
@@ -167,7 +168,7 @@ export default function PrestamoDetallePage() {
       const { error } = await supabase.from('prestamos').update({
         monto, tasa_interes: tasa, frecuencia: editForm.frecuencia,
         fecha_inicio: editForm.fecha_inicio, notas: editForm.notas || null,
-        carga_historica: editForm.carga_historica,
+        carga_historica: editForm.carga_historica, sin_prorrateo: editForm.sin_prorrateo,
       }).eq('id', prestamo.id)
       if (error) throw error
 
@@ -510,7 +511,14 @@ export default function PrestamoDetallePage() {
                   <b>Carga histórica</b> — pausa el cálculo de mora/capitalización mientras registras pagos pasados.
                 </span>
               </label>
-              <p className="text-[11px] text-slate-400">Esto solo cambia los datos del préstamo. Las cuotas ya generadas no se recalculan automáticamente.</p>
+              <label className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 cursor-pointer">
+                <input type="checkbox" checked={editForm.sin_prorrateo} onChange={e => setEditForm(prev => ({ ...prev, sin_prorrateo: e.target.checked }))}
+                  className="mt-0.5" />
+                <span className="text-[12px] text-blue-800">
+                  <b>Sin prorrateo</b> — cobra el interés completo del período aunque el préstamo arranque a mitad de ciclo (la cuota abierta se recalcula sola al guardar).
+                </span>
+              </label>
+              <p className="text-[11px] text-slate-400">Esto solo cambia los datos del préstamo. Las cuotas ya generadas no se recalculan automáticamente (excepto el interés de la próxima cuota abierta, que sí se ajusta según &quot;Sin prorrateo&quot;).</p>
               <div className="flex justify-end gap-2.5 pt-2">
                 <button onClick={cerrarEditar} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
                 <button onClick={guardarEdicion} disabled={savingEdit} className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold disabled:opacity-60">

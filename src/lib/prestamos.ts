@@ -123,12 +123,12 @@ export function interesProrrateado(monto: number, tasaInteres: number, diasStub:
  */
 export function primeraCuota(
   monto: number, tasaInteres: number, frecuencia: Frecuencia, fechaInicio: string,
-  primerVencimiento?: string | null,
+  primerVencimiento?: string | null, sinProrrateo?: boolean,
 ): CuotaNueva {
   const vence = primerVencimiento || siguienteVencimiento(frecuencia, fechaInicio)
   const diasPeriodo = diasEntre(anteriorVencimiento(frecuencia, vence), vence)
   const diasStub = diasEntre(fechaInicio, vence)
-  const esProrrateo = diasStub > 0 && diasStub < diasPeriodo
+  const esProrrateo = !sinProrrateo && diasStub > 0 && diasStub < diasPeriodo
 
   if (!esProrrateo) return cuota(1, vence, monto, tasaInteres)
 
@@ -187,7 +187,7 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
   const hoy = new Date().toISOString().slice(0, 10)
   const limiteCapitalizacion = addDias(hoy, -DIAS_GRACIA_CAPITALIZACION)
 
-  let query = supabase.from('prestamos').select('id,monto,tasa_interes,frecuencia,estado,carga_historica,fecha_inicio').in('estado', ['activo', 'en_mora'])
+  let query = supabase.from('prestamos').select('id,monto,tasa_interes,frecuencia,estado,carga_historica,fecha_inicio,sin_prorrateo').in('estado', ['activo', 'en_mora'])
   if (prestamoId) query = query.eq('id', prestamoId)
   const { data: prestamosList } = await query
   if (!prestamosList?.length) return
@@ -243,20 +243,25 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
       const inicioPeriodo = anteriorVencimiento(p.frecuencia as Frecuencia, proxima.fecha_vencimiento)
       const diasPeriodo = diasEntre(inicioPeriodo, proxima.fecha_vencimiento)
       const desembolsosPeriodo = (desembolsosList || []).filter((d: any) => d.fecha > inicioPeriodo && d.fecha <= proxima.fecha_vencimiento)
-      const totalDesembolsosPeriodo = desembolsosPeriodo.reduce((s: number, d: any) => s + Number(d.monto), 0)
+      const totalDesembolsosPeriodo = p.sin_prorrateo ? 0 : desembolsosPeriodo.reduce((s: number, d: any) => s + Number(d.monto), 0)
       const saldoBase = Math.round((saldo - totalDesembolsosPeriodo) * 100) / 100
       let nuevoInteres = Math.round(saldoBase * tasa * 100) / 100
-      for (const d of desembolsosPeriodo) {
-        const diasStub = Math.max(0, Math.min(diasPeriodo, diasEntre(d.fecha, proxima.fecha_vencimiento)))
-        nuevoInteres = Math.round((nuevoInteres + interesProrrateado(Number(d.monto), p.tasa_interes, diasStub, diasPeriodo)) * 100) / 100
-      }
-      // La cuota #1 no tiene su capital inicial en `desembolsos` (ese es el monto
-      // del prestamo en si): si el prestamo arranco a mitad del periodo de su
-      // propia primera cuota, se prorratea igual que hace primeraCuota() al crearlo.
-      if (proxima.numero === 1 && p.fecha_inicio > inicioPeriodo) {
-        const diasStubInicial = Math.max(0, Math.min(diasPeriodo, diasEntre(p.fecha_inicio, proxima.fecha_vencimiento)))
-        if (diasStubInicial > 0 && diasStubInicial < diasPeriodo) {
-          nuevoInteres = interesProrrateado(saldoBase, p.tasa_interes, diasStubInicial, diasPeriodo)
+      // "Sin prorrateo": el cliente paga el interés completo del período sin importar
+      // cuántos días estuvo activo el capital (ni el desembolso inicial ni los que se
+      // sumen después dentro del mismo período).
+      if (!p.sin_prorrateo) {
+        for (const d of desembolsosPeriodo) {
+          const diasStub = Math.max(0, Math.min(diasPeriodo, diasEntre(d.fecha, proxima.fecha_vencimiento)))
+          nuevoInteres = Math.round((nuevoInteres + interesProrrateado(Number(d.monto), p.tasa_interes, diasStub, diasPeriodo)) * 100) / 100
+        }
+        // La cuota #1 no tiene su capital inicial en `desembolsos` (ese es el monto
+        // del prestamo en si): si el prestamo arranco a mitad del periodo de su
+        // propia primera cuota, se prorratea igual que hace primeraCuota() al crearlo.
+        if (proxima.numero === 1 && p.fecha_inicio > inicioPeriodo) {
+          const diasStubInicial = Math.max(0, Math.min(diasPeriodo, diasEntre(p.fecha_inicio, proxima.fecha_vencimiento)))
+          if (diasStubInicial > 0 && diasStubInicial < diasPeriodo) {
+            nuevoInteres = interesProrrateado(saldoBase, p.tasa_interes, diasStubInicial, diasPeriodo)
+          }
         }
       }
       if (nuevoInteres !== proxima.interes) {

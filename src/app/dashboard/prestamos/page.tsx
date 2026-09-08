@@ -21,6 +21,7 @@ function emptyForm() {
   return {
     cliente_id: '', monto: '', tasa_interes: '', frecuencia: 'quincenal' as Frecuencia,
     fecha_inicio: new Date().toISOString().slice(0, 10), primer_vencimiento: '', notas: '',
+    sin_prorrateo: false,
   }
 }
 
@@ -73,11 +74,11 @@ export default function PrestamosPage() {
         monto, tasa_interes: tasa, frecuencia: form.frecuencia,
         fecha_inicio: form.fecha_inicio,
         notas: form.notas || null, estado: 'activo',
-        carga_historica: false,
+        carga_historica: false, sin_prorrateo: form.sin_prorrateo,
       }).select().single()
       if (error) throw error
 
-      const c1 = primeraCuota(monto, tasa, form.frecuencia, form.fecha_inicio, form.primer_vencimiento || null)
+      const c1 = primeraCuota(monto, tasa, form.frecuencia, form.fecha_inicio, form.primer_vencimiento || null, form.sin_prorrateo)
       const { error: errCuotas } = await supabase.from('cuotas').insert({ ...c1, prestamo_id: prestamo.id })
       if (errCuotas) throw errCuotas
 
@@ -97,7 +98,7 @@ export default function PrestamosPage() {
 
   const diasPeriodo = DIAS_FRECUENCIA[form.frecuencia]
   const diasStub = form.primer_vencimiento ? diasEntre(form.fecha_inicio, form.primer_vencimiento) : 0
-  const esProrrateo = diasStub > 0 && diasStub < diasPeriodo
+  const esProrrateo = !form.sin_prorrateo && diasStub > 0 && diasStub < diasPeriodo
   const interesPrimeraCuota = esProrrateo
     ? Math.round(parseFloat(form.monto) * (parseFloat(form.tasa_interes) / 100) * (diasStub / diasPeriodo) * 100) / 100
     : interesPeriodo
@@ -230,6 +231,10 @@ export default function PrestamosPage() {
                   className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400" />
                 <p className="text-[11px] text-slate-400 mt-1">Para alinear la primera cuota con otro ciclo de pago. El interés de esa cuota se prorratea por días.</p>
               </div>
+              <label className="flex items-center gap-2 text-[12px] font-semibold text-slate-600">
+                <input type="checkbox" checked={form.sin_prorrateo} onChange={e => f('sin_prorrateo', e.target.checked)} className="w-4 h-4" />
+                Sin prorrateo (cobrar el interés completo del período aunque arranque a mitad de ciclo)
+              </label>
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 mb-1">Notas (opcional)</label>
                 <input value={form.notas} onChange={e => f('notas', e.target.value)}
