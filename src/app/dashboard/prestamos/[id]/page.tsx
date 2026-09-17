@@ -235,6 +235,10 @@ export default function PrestamoDetallePage() {
 
   const totalCuota = (c: Cuota) => c.monto_cuota
   const saldoCuota = (c: Cuota) => Math.max(0, c.monto_cuota - c.monto_pagado)
+  // c.capital es el capital programado (siempre 0 en préstamos de solo interés); el abono real
+  // a capital es el excedente pagado por encima del interés de esa cuota — igual que abonoCapital
+  // en registrarPago(). Antes la columna mostraba c.capital y nunca reflejaba el abono real.
+  const capitalPagado = (c: Cuota) => Math.max(0, c.monto_pagado - c.interes)
   // Las cuotas capitalizadas se excluyen: su saldo ya se sumó al capital y quedó
   // reflejado en el interés de las cuotas siguientes, contarlas aparte duplicaría el monto.
   const cuotasVigentes = cuotas.filter(c => c.estado !== 'capitalizada')
@@ -350,7 +354,7 @@ export default function PrestamoDetallePage() {
                   <td className="px-4 py-2.5">{fmtFecha(c.fecha_vencimiento)}</td>
                   <td className="px-4 py-2.5 text-right">{fmtMoney(c.saldo_capital)}</td>
                   <td className="px-4 py-2.5 text-right">{fmtMoney(c.interes)}</td>
-                  <td className="px-4 py-2.5 text-right">{c.capital > 0 ? fmtMoney(c.capital) : '—'}</td>
+                  <td className="px-4 py-2.5 text-right">{capitalPagado(c) > 0 ? fmtMoney(capitalPagado(c)) : '—'}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(totalCuota(c))}</td>
                   <td className="px-4 py-2.5 text-right text-emerald-700">{c.monto_pagado > 0 ? fmtMoney(c.monto_pagado) : '—'}</td>
                   <td className="px-4 py-2.5 text-center">
