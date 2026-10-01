@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, soloDecimal, anteriorVencimiento, diasEntre, interesProrrateado } from '@/lib/prestamos'
+import { agruparCuotasCapitalizadas, fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, soloDecimal, anteriorVencimiento, diasEntre, interesProrrateado } from '@/lib/prestamos'
 import type { Cliente, Prestamo, Cuota, Pago, Desembolso, Frecuencia, FormaPago } from '@/types'
 
 const ESTADO_CUOTA_STYLE: Record<string, string> = {
@@ -70,7 +70,8 @@ export default function PrestamoDetallePage() {
 
   const abrirPago = (c: Cuota) => {
     setCuotaSel(c)
-    setMontoPago(String((c.monto_cuota - c.monto_pagado).toFixed(2)))
+    const recargo = agruparCuotasCapitalizadas(cuotas).get(c.numero)?.recargo ?? 0
+    setMontoPago(String(Math.max(0, c.monto_cuota + recargo - c.monto_pagado).toFixed(2)))
     setFechaPago(new Date().toISOString().slice(0, 10))
     setFormaPago('efectivo')
     setModal(true)
@@ -233,8 +234,11 @@ export default function PrestamoDetallePage() {
     return <div className="py-20 text-center text-slate-400">Cargando…</div>
   }
 
-  const totalCuota = (c: Cuota) => c.monto_cuota
-  const saldoCuota = (c: Cuota) => Math.max(0, c.monto_cuota - c.monto_pagado)
+  const grupos = agruparCuotasCapitalizadas(cuotas)
+  const recargoCuota = (c: Cuota) => grupos.get(c.numero)?.recargo ?? 0
+  const etiquetaCuota = (c: Cuota) => grupos.get(c.numero)?.etiqueta ?? String(c.numero)
+  const totalCuota = (c: Cuota) => Math.round((c.monto_cuota + recargoCuota(c)) * 100) / 100
+  const saldoCuota = (c: Cuota) => Math.max(0, totalCuota(c) - c.monto_pagado)
   // c.capital es el capital programado (siempre 0 en préstamos de solo interés); el abono real
   // a capital es el excedente pagado por encima del interés de esa cuota — igual que abonoCapital
   // en registrarPago(). Antes la columna mostraba c.capital y nunca reflejaba el abono real.
@@ -350,12 +354,15 @@ export default function PrestamoDetallePage() {
             <tbody>
               {[...cuotas].reverse().map((c, i) => (
                 <tr key={c.id} className={`border-b border-[#f1f5f9] ${i % 2 === 0 ? '' : 'bg-[#f8fafc]'}`}>
-                  <td className="px-4 py-2.5 text-center font-mono text-slate-500">{c.numero}</td>
+                  <td className="px-4 py-2.5 text-center font-mono text-slate-500 whitespace-nowrap">{etiquetaCuota(c)}</td>
                   <td className="px-4 py-2.5">{fmtFecha(c.fecha_vencimiento)}</td>
                   <td className="px-4 py-2.5 text-right">{fmtMoney(c.saldo_capital)}</td>
                   <td className="px-4 py-2.5 text-right">{fmtMoney(c.interes)}</td>
                   <td className="px-4 py-2.5 text-right">{capitalPagado(c) > 0 ? fmtMoney(capitalPagado(c)) : '—'}</td>
-                  <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(totalCuota(c))}</td>
+                  <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">
+                    {fmtMoney(totalCuota(c))}
+                    {recargoCuota(c) > 0 && <span className="block text-[10px] font-semibold text-purple-700">incl. recargo {fmtMoney(recargoCuota(c))}</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-right text-emerald-700">{c.monto_pagado > 0 ? fmtMoney(c.monto_pagado) : '—'}</td>
                   <td className="px-4 py-2.5 text-center">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${ESTADO_CUOTA_STYLE[c.estado]}`}>
@@ -425,12 +432,13 @@ export default function PrestamoDetallePage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={e => e.target === e.currentTarget && cerrarModal()}>
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-slideUp">
             <div className="bg-gradient-to-r from-[#0f172a] to-[#059669] px-6 py-4 flex items-center justify-between">
-              <span className="text-white font-bold text-[15px]">💰 Registrar Pago — Cuota {cuotaSel.numero}</span>
+              <span className="text-white font-bold text-[15px]">💰 Registrar Pago — Cuota {etiquetaCuota(cuotaSel)}</span>
               <button onClick={cerrarModal} className="text-white/80 hover:text-white text-lg font-bold">✕</button>
             </div>
             <div className="p-6 space-y-3">
               <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-[12px] text-slate-600 space-y-1">
-                <div className="flex justify-between"><span>Cuota esperada</span><b>{fmtMoney(cuotaSel.monto_cuota)}</b></div>
+                <div className="flex justify-between"><span>Interés de la cuota</span><b>{fmtMoney(cuotaSel.monto_cuota)}</b></div>
+                {recargoCuota(cuotaSel) > 0 && <div className="flex justify-between text-purple-700"><span>Recargo intereses atrasados</span><b>{fmtMoney(recargoCuota(cuotaSel))}</b></div>}
                 <div className="flex justify-between"><span>Ya pagado</span><b>{fmtMoney(cuotaSel.monto_pagado)}</b></div>
                 <div className="flex justify-between text-red-600"><span>Saldo de esta cuota</span><b>{fmtMoney(saldoCuota(cuotaSel))}</b></div>
               </div>

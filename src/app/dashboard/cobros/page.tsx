@@ -4,10 +4,12 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, reconciliarPrestamosVencidos, soloDecimal, telefonoWhatsapp, FORMA_PAGO_LABEL } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, agruparCuotasCapitalizadas, reconciliarPrestamosVencidos, soloDecimal, telefonoWhatsapp, FORMA_PAGO_LABEL } from '@/lib/prestamos'
 import type { Cuota, FormaPago } from '@/types'
 
 interface CuotaRow extends Cuota {
+  etiqueta?: string
+  recargo?: number
   prestamo: { id: number; monto: number; tasa_interes: number; fecha_inicio: string; cliente: { nombre: string; apellido: string | null; cedula: string | null; telefono: string | null } }
 }
 
@@ -22,13 +24,14 @@ function diasAtraso(fechaVencimiento: string): number {
 function mensajeAvisoPago(c: CuotaRow): string {
   const nombreCompleto = `${c.prestamo.cliente.nombre} ${c.prestamo.cliente.apellido ?? ''}`.trim()
   const dias = diasAtraso(c.fecha_vencimiento)
-  const saldo = fmtMoney(Math.max(0, c.monto_cuota - c.monto_pagado))
+  const saldo = fmtMoney(Math.max(0, c.monto_cuota + (c.recargo ?? 0) - c.monto_pagado))
+  const num = c.etiqueta ?? String(c.numero)
   if (dias > 0) {
-    return `Hola ${nombreCompleto} 👋, te escribimos para recordarte que tu cuota #${c.numero} venció el ${fmtFecha(c.fecha_vencimiento)} ` +
+    return `Hola ${nombreCompleto} 👋, te escribimos para recordarte que tu cuota #${num} venció el ${fmtFecha(c.fecha_vencimiento)} ` +
       `(hace ${dias} día${dias === 1 ? '' : 's'}) y tiene un saldo pendiente de *${saldo}*. ` +
       `Por favor ponte al día lo antes posible para evitar más atrasos. ¡Gracias! 🙏`
   }
-  return `Hola ${nombreCompleto} 👋, te recordamos que tu cuota #${c.numero} vence el ${fmtFecha(c.fecha_vencimiento)} ` +
+  return `Hola ${nombreCompleto} 👋, te recordamos que tu cuota #${num} vence el ${fmtFecha(c.fecha_vencimiento)} ` +
     `por un monto de *${saldo}*. ¡Gracias por tu puntualidad! 🙏`
 }
 
@@ -84,11 +87,23 @@ export default function CobrosPage() {
     ])
     setLoading(false)
     if (cuotasRes.error) { toast.error(cuotasRes.error.message); return }
-    setCuotas((cuotasRes.data || []) as any)
+    // Recargo de intereses atrasados (cuotas capitalizadas) por préstamo: necesita todas sus cuotas.
+    const rows = (cuotasRes.data || []) as any[]
+    const ids = [...new Set(rows.map(r => r.prestamo_id))]
+    if (ids.length) {
+      const { data: todas } = await supabase.from('cuotas').select('prestamo_id,numero,estado,monto_cuota,monto_pagado').in('prestamo_id', ids)
+      const porPrestamo = new Map<number, any[]>()
+      ;(todas || []).forEach((c: any) => { porPrestamo.set(c.prestamo_id, [...(porPrestamo.get(c.prestamo_id) || []), c]) })
+      const grupos = new Map([...porPrestamo].map(([pid, cs]) => [pid, agruparCuotasCapitalizadas(cs)]))
+      rows.forEach(r => { const g = grupos.get(r.prestamo_id)?.get(r.numero); r.etiqueta = g?.etiqueta; r.recargo = g?.recargo ?? 0 })
+    }
+    setCuotas(rows as any)
     setPagos((pagosRes.data || []) as any)
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  const saldoCuota = (c: CuotaRow) => Math.max(0, c.monto_cuota + (c.recargo ?? 0) - c.monto_pagado)
 
   const filtered = cuotas.filter(c => {
     const txt = `${c.prestamo.cliente.nombre} ${c.prestamo.cliente.apellido ?? ''} ${c.prestamo.cliente.cedula ?? ''}`.toLowerCase()
@@ -97,7 +112,7 @@ export default function CobrosPage() {
 
   const abrirPago = async (c: CuotaRow) => {
     setCuotaSel(c)
-    setMontoPago(String((c.monto_cuota - c.monto_pagado).toFixed(2)))
+    setMontoPago(String(saldoCuota(c).toFixed(2)))
     setFechaPago(new Date().toISOString().slice(0, 10))
     setFormaPago('efectivo')
     const { data } = await supabase.from('cuotas').select('*').eq('prestamo_id', c.prestamo.id).order('numero')
@@ -162,7 +177,6 @@ export default function CobrosPage() {
     }
   }
 
-  const saldoCuota = (c: Cuota) => Math.max(0, c.monto_cuota - c.monto_pagado)
   const totalPorCobrar = filtered.reduce((s, c) => s + saldoCuota(c), 0)
 
   return (
@@ -213,10 +227,13 @@ export default function CobrosPage() {
                     </Link>
                   </td>
                   <td className="px-4 py-2.5 text-slate-500">{fmtFecha(c.prestamo.fecha_inicio)}</td>
-                  <td className="px-4 py-2.5 text-center font-mono text-slate-500">#{c.numero}</td>
+                  <td className="px-4 py-2.5 text-center font-mono text-slate-500 whitespace-nowrap">#{c.etiqueta ?? c.numero}</td>
                   <td className="px-4 py-2.5">{fmtFecha(c.fecha_vencimiento)}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(c.saldo_capital)}</td>
-                  <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(saldoCuota(c))}</td>
+                  <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">
+                    {fmtMoney(saldoCuota(c))}
+                    {(c.recargo ?? 0) > 0 && <span className="block text-[10px] font-semibold text-purple-700">incl. recargo {fmtMoney(c.recargo)}</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-center">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${ESTADO_STYLE[c.estado]}`}>
                       {ESTADO_LABEL[c.estado] ?? c.estado}
@@ -278,7 +295,8 @@ export default function CobrosPage() {
             </div>
             <div className="p-6 space-y-3">
               <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-[12px] text-slate-600 space-y-1">
-                <div className="flex justify-between"><span>Cuota #{cuotaSel.numero} esperada</span><b>{fmtMoney(cuotaSel.monto_cuota)}</b></div>
+                <div className="flex justify-between"><span>Interés cuota #{cuotaSel.numero}</span><b>{fmtMoney(cuotaSel.monto_cuota)}</b></div>
+                {(cuotaSel.recargo ?? 0) > 0 && <div className="flex justify-between text-purple-700"><span>Recargo intereses atrasados (cuota #{cuotaSel.etiqueta})</span><b>{fmtMoney(cuotaSel.recargo)}</b></div>}
                 <div className="flex justify-between"><span>Ya pagado</span><b>{fmtMoney(cuotaSel.monto_pagado)}</b></div>
                 <div className="flex justify-between text-red-600"><span>Saldo de esta cuota</span><b>{fmtMoney(saldoCuota(cuotaSel))}</b></div>
               </div>

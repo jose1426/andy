@@ -167,12 +167,44 @@ export function cuotasFaltantesHastaHoy(
   return nuevas
 }
 
-/** Días de gracia tras el vencimiento antes de capitalizar el interés no pagado al capital. */
-export const DIAS_GRACIA_CAPITALIZACION = 2
+
+/**
+ * Agrupa las cuotas capitalizadas (no pagadas a tiempo) con la siguiente cuota.
+ * Cuando el cliente no paga el día 15 o fin de mes, el interés vencido se suma
+ * al capital (cuota "capitalizada") y la siguiente cuota se cobra sobre ese saldo
+ * mayor. Esa siguiente cuota se rotula "2 y 3" y su total a cobrar incluye el
+ * interés atrasado (recargo), para que el cobro muestre todo lo que debe.
+ * Si el cliente paga el total, el excedente sobre el interés de la cuota se abona
+ * a capital y el saldo vuelve a quedar como antes del atraso.
+ */
+export interface AgrupacionCuota { etiqueta: string; recargo: number }
+
+export function unirNumerosCuota(nums: number[]): string {
+  if (nums.length <= 1) return String(nums[0] ?? '')
+  return nums.slice(0, -1).join(', ') + ' y ' + nums[nums.length - 1]
+}
+
+export function agruparCuotasCapitalizadas<T extends { numero: number; estado: string; monto_cuota: number; monto_pagado: number }>(
+  cuotas: T[],
+): Map<number, AgrupacionCuota> {
+  const res = new Map<number, AgrupacionCuota>()
+  let capitalizadas: T[] = []
+  for (const c of [...cuotas].sort((a, b) => a.numero - b.numero)) {
+    if (c.estado === 'capitalizada') { capitalizadas.push(c); continue }
+    const recargo = Math.round(capitalizadas.reduce((s, x) => s + Math.max(0, Number(x.monto_cuota) - Number(x.monto_pagado)), 0) * 100) / 100
+    res.set(c.numero, { etiqueta: unirNumerosCuota([...capitalizadas.map(x => x.numero), c.numero]), recargo })
+    capitalizadas = []
+  }
+  return res
+}
+
+/** Días de gracia tras el vencimiento antes de capitalizar el interés no pagado al capital.
+ * 1 = el recargo entra el día siguiente al vencimiento (vence 15 -> recargo el 16; vence fin de mes -> recargo el 1). */
+export const DIAS_GRACIA_CAPITALIZACION = 1
 
 /**
  * Recorre los préstamos activos/en mora (o uno solo si se pasa prestamoId) y:
- * 1. Capitaliza al capital el interés de cuotas vencidas hace 2+ días sin pagar
+ * 1. Capitaliza al capital el interés de cuotas vencidas hace 1+ día sin pagar
  *    (se registra como un desembolso con nota, y la cuota queda "capitalizada").
  * 2. Recalcula el interés de las cuotas abiertas restantes sobre el saldo resultante.
  * 3. Genera las cuotas que falten hasta hoy.
@@ -196,7 +228,7 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
     const { data: cuotasIniciales } = await supabase.from('cuotas').select('*').eq('prestamo_id', p.id).order('numero')
     if (!cuotasIniciales?.length) continue
 
-    // 1) Capitalizar el interés no pagado de cuotas vencidas hace 2+ días.
+    // 1) Capitalizar el interés no pagado de cuotas vencidas hace 1+ día.
     // Todo el trabajo (reclamar la cuota, registrar el desembolso, sumar el
     // capital) ocurre en una sola transacción de Postgres (fn_capitalizar_cuota),
     // así que dos cargas concurrentes (p. ej. React StrictMode, u otra pestaña)
@@ -217,7 +249,7 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
     const [{ data: prestamoFresh }, { data: cuotasList }, { data: desembolsosList }] = await Promise.all([
       supabase.from('prestamos').select('monto').eq('id', p.id).single(),
       supabase.from('cuotas').select('*').eq('prestamo_id', p.id).order('numero'),
-      supabase.from('desembolsos').select('monto,fecha').eq('prestamo_id', p.id),
+      supabase.from('desembolsos').select('monto,fecha,notas').eq('prestamo_id', p.id),
     ])
     if (!cuotasList?.length) continue
     const monto = (prestamoFresh as any)?.monto ?? p.monto
@@ -242,7 +274,10 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
     if (proxima) {
       const inicioPeriodo = anteriorVencimiento(p.frecuencia as Frecuencia, proxima.fecha_vencimiento)
       const diasPeriodo = diasEntre(inicioPeriodo, proxima.fecha_vencimiento)
-      const desembolsosPeriodo = (desembolsosList || []).filter((d: any) => d.fecha > inicioPeriodo && d.fecha <= proxima.fecha_vencimiento)
+      // El interés capitalizado por mora no se prorratea: es deuda vencida que cobra
+      // interés completo desde el período siguiente.
+      const desembolsosPeriodo = (desembolsosList || []).filter((d: any) =>
+        d.fecha > inicioPeriodo && d.fecha <= proxima.fecha_vencimiento && !String(d.notas || '').startsWith('Interés capitalizado'))
       const totalDesembolsosPeriodo = p.sin_prorrateo ? 0 : desembolsosPeriodo.reduce((s: number, d: any) => s + Number(d.monto), 0)
       const saldoBase = Math.round((saldo - totalDesembolsosPeriodo) * 100) / 100
       let nuevoInteres = Math.round(saldoBase * tasa * 100) / 100

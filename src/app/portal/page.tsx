@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { supabase } from '@/lib/supabase/client'
-import { fmtMoney, fmtFecha, soloDecimal, FORMA_PAGO_LABEL, FRECUENCIA_LABEL } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, agruparCuotasCapitalizadas, soloDecimal, FORMA_PAGO_LABEL, FRECUENCIA_LABEL } from '@/lib/prestamos'
 import type { EstadoPrestamo, EstadoCuota, EstadoSolicitud, Frecuencia, FormaPago } from '@/types'
 
 const TOKEN_KEY = 'portal_session_token'
@@ -195,6 +195,8 @@ export default function PortalPage() {
 
         {[...prestamosActivos, ...prestamosCerrados].map(p => {
           const proxima = p.cuotas.find(c => c.estado === 'pendiente' || c.estado === 'atrasada')
+          const grupos = agruparCuotasCapitalizadas(p.cuotas)
+          const totalCuota = (c: DashCuota) => Number(c.monto_cuota) + (grupos.get(c.numero)?.recargo ?? 0)
           const saldo = p.cuotas.length ? p.cuotas[p.cuotas.length - 1].saldo_capital : p.monto
           return (
             <div key={p.id} className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
@@ -217,7 +219,7 @@ export default function PortalPage() {
                   <div className="px-5 py-3">
                     <div className="text-[10px] font-bold text-slate-500 uppercase">Próxima cuota</div>
                     <div className="text-[15px] font-bold text-[#0f172a]">
-                      {proxima ? `${fmtMoney(proxima.monto_cuota)} · ${fmtFecha(proxima.fecha_vencimiento)}` : '—'}
+                      {proxima ? `${fmtMoney(totalCuota(proxima))} · ${fmtFecha(proxima.fecha_vencimiento)}` : '—'}
                     </div>
                   </div>
                 </div>
@@ -238,9 +240,9 @@ export default function PortalPage() {
                     <tbody>
                       {p.cuotas.map(c => (
                         <tr key={c.numero} className="border-t border-[#f1f5f9]">
-                          <td className="py-1.5 text-slate-500">{c.numero}</td>
+                          <td className="py-1.5 text-slate-500 whitespace-nowrap">{grupos.get(c.numero)?.etiqueta ?? c.numero}</td>
                           <td className="py-1.5 text-slate-500">{fmtFecha(c.fecha_vencimiento)}</td>
-                          <td className="py-1.5 text-right font-semibold text-[#0f172a]">{fmtMoney(c.monto_cuota)}</td>
+                          <td className="py-1.5 text-right font-semibold text-[#0f172a]">{fmtMoney(totalCuota(c))}</td>
                           <td className="py-1.5 text-center">
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${ESTADO_CUOTA_STYLE[c.estado]}`}>
                               {ESTADO_CUOTA_LABEL[c.estado]}
