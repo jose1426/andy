@@ -56,6 +56,8 @@ function ReporteMovimientoContent() {
   const [clienteId, setClienteId] = useState(searchParams.get('cliente') ?? '')
   const [loading, setLoading] = useState(false)
   const [movimientos, setMovimientos] = useState<Movimiento[]>([])
+  const [ascendente, setAscendente] = useState(true)
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'prestamos' | 'pagos'>('todos')
 
   useEffect(() => {
     supabase.from('clientes').select('*').order('nombre').then(({ data }) => setClientes((data || []) as Cliente[]))
@@ -156,6 +158,14 @@ function ReporteMovimientoContent() {
     return movimientos.map(m => { saldo = Math.round((saldo + m.capitalDelta) * 100) / 100; return { ...m, saldo } })
   }, [movimientos])
 
+  // El saldo se calcula siempre en orden cronológico; solo se invierte lo que se muestra.
+  // El filtro tampoco altera el saldo: cada fila conserva el saldo real tras ese movimiento.
+  const filas = useMemo(() => {
+    const visibles = conSaldo.filter(m =>
+      filtroTipo === 'todos' || (filtroTipo === 'pagos' ? m.tipo === 'pago' : m.tipo !== 'pago'))
+    return ascendente ? visibles : [...visibles].reverse()
+  }, [conSaldo, ascendente, filtroTipo])
+
   const totalPrestado = movimientos.reduce((s, m) => s + m.prestado, 0)
   const totalCobrado = movimientos.reduce((s, m) => s + m.cobrado, 0)
   const totalInteres = movimientos.reduce((s, m) => s + m.interesDelCobro, 0)
@@ -168,7 +178,7 @@ function ReporteMovimientoContent() {
 
   const exportarExcel = () => {
     const headers = ['Fecha', 'Movimiento', 'Prestado', 'Cobrado', 'Interés', 'Abono Capital', 'Saldo Capital']
-    const filas = conSaldo.map(m => [
+    const filasCsv = filas.map(m => [
       m.fecha,
       `${TIPO_LABEL[m.tipo]} - ${m.descripcion}`,
       m.prestado > 0 ? m.prestado.toFixed(2) : '',
@@ -177,7 +187,7 @@ function ReporteMovimientoContent() {
       m.tipo === 'pago' ? m.capitalDelCobro.toFixed(2) : '',
       m.saldo.toFixed(2),
     ])
-    const csv = [headers, ...filas].map(fila => fila.map(csvEscape).join(',')).join('\r\n')
+    const csv = [headers, ...filasCsv].map(fila => fila.map(csvEscape).join(',')).join('\r\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -214,6 +224,15 @@ function ReporteMovimientoContent() {
           <option value="">— Seleccionar cliente —</option>
           {clientes.map(c => <option key={c.id} value={c.id}>{c.nombre} {c.apellido}</option>)}
         </select>
+        <label className="block text-[10px] font-bold text-slate-500 uppercase mt-3 mb-1">Mostrar</label>
+        <div className="inline-flex rounded-lg border border-[#e2e8f0] overflow-hidden">
+          {([['todos', 'Todos'], ['prestamos', '💵 Préstamos'], ['pagos', '💰 Pagos']] as const).map(([v, label]) => (
+            <button key={v} type="button" onClick={() => setFiltroTipo(v)}
+              className={`px-3.5 py-1.5 text-[12px] font-bold ${filtroTipo === v ? 'bg-emerald-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {clienteId && movimientos.length > 0 && (
@@ -266,7 +285,12 @@ function ReporteMovimientoContent() {
               <table className="w-full border-collapse text-[13px]">
                 <thead>
                   <tr className="bg-[#f1f5f9] border-b-2 border-[#e2e8f0]">
-                    <th className="px-4 py-2 text-left text-[11px] font-bold uppercase text-slate-500">Fecha</th>
+                    <th className="px-4 py-2 text-left text-[11px] font-bold uppercase text-slate-500">
+                      <button type="button" onClick={() => setAscendente(a => !a)} title="Cambiar orden por fecha"
+                        className="uppercase font-bold hover:text-emerald-700 print:pointer-events-none">
+                        Fecha {ascendente ? '▲' : '▼'}
+                      </button>
+                    </th>
                     <th className="px-4 py-2 text-left text-[11px] font-bold uppercase text-slate-500">Movimiento</th>
                     <th className="px-4 py-2 text-right text-[11px] font-bold uppercase text-slate-500">Prestado</th>
                     <th className="px-4 py-2 text-right text-[11px] font-bold uppercase text-slate-500">Cobrado</th>
@@ -277,7 +301,7 @@ function ReporteMovimientoContent() {
                   </tr>
                 </thead>
                 <tbody>
-                  {conSaldo.map(m => (
+                  {filas.map(m => (
                     <tr key={m.key} className="border-b border-[#f1f5f9]">
                       <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{fmtFecha(m.fecha)}</td>
                       <td className={`px-4 py-2 font-semibold ${TIPO_STYLE[m.tipo]}`}>
