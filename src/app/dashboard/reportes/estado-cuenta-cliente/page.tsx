@@ -47,6 +47,7 @@ function EstadoCuentaClienteContent() {
   const [loading, setLoading] = useState(false)
   const [filas, setFilas] = useState<FilaPrestamo[]>([])
   const [soloActivos, setSoloActivos] = useState(false)
+  const [ascendente, setAscendente] = useState(true)
 
   useEffect(() => {
     supabase.from('clientes').select('*').order('nombre').then(({ data }) => setClientes((data || []) as Cliente[]))
@@ -93,10 +94,10 @@ function EstadoCuentaClienteContent() {
 
   useEffect(() => { load(clienteId) }, [clienteId, load])
 
-  const visibles = useMemo(
-    () => filas.filter(f => !soloActivos || f.estado === 'activo' || f.estado === 'en_mora'),
-    [filas, soloActivos],
-  )
+  const visibles = useMemo(() => {
+    const lista = filas.filter(f => !soloActivos || f.estado === 'activo' || f.estado === 'en_mora')
+    return ascendente ? lista : [...lista].reverse()
+  }, [filas, soloActivos, ascendente])
   const total = useMemo(() => visibles.reduce((s, f) => ({
     capitalInicial: s.capitalInicial + f.capitalInicial, adicionales: s.adicionales + f.adicionales,
     cobrado: s.cobrado + f.cobrado, interes: s.interes + f.interes,
@@ -202,7 +203,12 @@ function EstadoCuentaClienteContent() {
               <table className="w-full border-collapse text-[13px]">
                 <thead>
                   <tr className="bg-[#f1f5f9] border-b-2 border-[#e2e8f0]">
-                    <th className="px-4 py-2 text-left text-[11px] font-bold uppercase text-slate-500">Fecha</th>
+                    <th className="px-4 py-2 text-left text-[11px] font-bold uppercase text-slate-500">
+                      <button type="button" onClick={() => setAscendente(a => !a)} title="Cambiar orden por fecha"
+                        className="uppercase font-bold hover:text-emerald-700 print:pointer-events-none">
+                        Fecha {ascendente ? '▲' : '▼'}
+                      </button>
+                    </th>
                     <th className="px-4 py-2 text-left text-[11px] font-bold uppercase text-slate-500">Préstamo</th>
                     <th className="px-4 py-2 text-center text-[11px] font-bold uppercase text-slate-500">Estado</th>
                     <th className="px-4 py-2 text-right text-[11px] font-bold uppercase text-slate-500">Capital inicial</th>
