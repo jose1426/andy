@@ -69,6 +69,9 @@ export default function ReportesPage() {
           <Link href="/dashboard/reportes/movimiento" className="px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold hover:opacity-90 transition-opacity">
             🧾 Movimiento por Cliente
           </Link>
+          <Link href="/dashboard/reportes/estado-cuenta-cliente" className="px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold hover:opacity-90 transition-opacity">
+            📄 Estado de Cuenta del Cliente
+          </Link>
           <Link href="/dashboard/reportes/estado-cuenta" className="px-4 py-2.5 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold hover:opacity-90 transition-opacity">
             📋 Estado de Cuenta Global
           </Link>
