@@ -332,5 +332,15 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
     if (!p.carga_historica && (nuevas.some(n => n.fecha_vencimiento < hoy) || vencidas.length || monto !== p.monto) && p.estado === 'activo') {
       await supabase.from('prestamos').update({ estado: 'en_mora' }).eq('id', p.id).eq('estado', 'activo')
     }
+
+    // 6) Quitar la mora cuando el cliente ya se puso al día: un préstamo en mora
+    // sin ninguna cuota vencida pendiente de pago vuelve a "activo".
+    if (p.estado === 'en_mora') {
+      const { count } = await supabase.from('cuotas').select('id', { count: 'exact', head: true })
+        .eq('prestamo_id', p.id).in('estado', ['pendiente', 'atrasada', 'parcial']).lt('fecha_vencimiento', hoy)
+      if (count === 0) {
+        await supabase.from('prestamos').update({ estado: 'activo' }).eq('id', p.id).eq('estado', 'en_mora')
+      }
+    }
   }
 }
