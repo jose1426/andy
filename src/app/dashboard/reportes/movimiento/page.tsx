@@ -163,8 +163,22 @@ function ReporteMovimientoContent() {
   const filas = useMemo(() => {
     const visibles = conSaldo.filter(m =>
       filtroTipo === 'todos' || (filtroTipo === 'pagos' ? m.tipo === 'pago' : m.tipo !== 'pago'))
-    return ascendente ? visibles : [...visibles].reverse()
+    // En la vista "Préstamos" los pagos están ocultos: la fila del préstamo original
+    // resume lo cobrado, el interés y el abono a capital de todos sus pagos.
+    const filasVista = visibles.map(m => {
+      if (filtroTipo !== 'prestamos' || m.tipo !== 'prestamo') return m
+      const pagosDelPrestamo = conSaldo.filter(x => x.tipo === 'pago' && x.prestamoId === m.prestamoId)
+      return {
+        ...m,
+        cobrado: pagosDelPrestamo.reduce((s, x) => s + x.cobrado, 0),
+        interesDelCobro: pagosDelPrestamo.reduce((s, x) => s + x.interesDelCobro, 0),
+        capitalDelCobro: pagosDelPrestamo.reduce((s, x) => s + x.capitalDelCobro, 0),
+      }
+    })
+    return ascendente ? filasVista : [...filasVista].reverse()
   }, [conSaldo, ascendente, filtroTipo])
+
+  const muestraCobros = (m: Movimiento) => m.tipo === 'pago' || (filtroTipo === 'prestamos' && m.tipo === 'prestamo')
 
   const totalPrestado = movimientos.reduce((s, m) => s + m.prestado, 0)
   const totalCobrado = movimientos.reduce((s, m) => s + m.cobrado, 0)
@@ -183,8 +197,8 @@ function ReporteMovimientoContent() {
       `${TIPO_LABEL[m.tipo]} - ${m.descripcion}`,
       m.prestado > 0 ? m.prestado.toFixed(2) : '',
       m.cobrado > 0 ? m.cobrado.toFixed(2) : '',
-      m.tipo === 'pago' ? m.interesDelCobro.toFixed(2) : '',
-      m.tipo === 'pago' ? m.capitalDelCobro.toFixed(2) : '',
+      muestraCobros(m) ? m.interesDelCobro.toFixed(2) : '',
+      muestraCobros(m) ? m.capitalDelCobro.toFixed(2) : '',
       m.saldo.toFixed(2),
     ])
     const csv = [headers, ...filasCsv].map(fila => fila.map(csvEscape).join(',')).join('\r\n')
@@ -310,8 +324,8 @@ function ReporteMovimientoContent() {
                       </td>
                       <td className="px-4 py-2 text-right font-bold text-[#0f172a]">{m.prestado > 0 ? fmtMoney(m.prestado) : '—'}</td>
                       <td className="px-4 py-2 text-right font-bold text-emerald-700">{m.cobrado > 0 ? fmtMoney(m.cobrado) : '—'}</td>
-                      <td className="px-4 py-2 text-right text-amber-700">{m.tipo === 'pago' ? fmtMoney(m.interesDelCobro) : '—'}</td>
-                      <td className="px-4 py-2 text-right text-sky-700">{m.tipo === 'pago' ? fmtMoney(m.capitalDelCobro) : '—'}</td>
+                      <td className="px-4 py-2 text-right text-amber-700">{muestraCobros(m) ? fmtMoney(m.interesDelCobro) : '—'}</td>
+                      <td className="px-4 py-2 text-right text-sky-700">{muestraCobros(m) ? fmtMoney(m.capitalDelCobro) : '—'}</td>
                       <td className="px-4 py-2 text-right font-bold text-[#0f172a]">{fmtMoney(m.saldo)}</td>
                       <td className="px-4 py-2 text-center print:hidden">
                         <Link href={`/dashboard/prestamos/${m.prestamoId}`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">Ver →</Link>
