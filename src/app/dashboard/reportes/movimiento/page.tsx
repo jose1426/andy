@@ -22,6 +22,7 @@ interface Movimiento {
   tipo: 'prestamo' | 'adicional' | 'capitalizacion' | 'pago'
   descripcion: string
   prestamoId: number
+  estadoPrestamo: string
   prestado: number
   cobrado: number
   interesDelCobro: number
@@ -58,6 +59,7 @@ function ReporteMovimientoContent() {
   const [movimientos, setMovimientos] = useState<Movimiento[]>([])
   const [ascendente, setAscendente] = useState(true)
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'prestamos' | 'pagos'>('todos')
+  const [soloActivos, setSoloActivos] = useState(false)
 
   useEffect(() => {
     supabase.from('clientes').select('*').order('nombre').then(({ data }) => setClientes((data || []) as Cliente[]))
@@ -89,13 +91,14 @@ function ReporteMovimientoContent() {
 
       const movs: Movimiento[] = []
       let orden = 0
+      const estadoDe = new Map(prestamosList.map(p => [p.id, p.estado]))
 
       for (const p of prestamosList) {
         const totalDesemPrestamo = desembolsosList.filter(d => d.prestamo_id === p.id).reduce((s, d) => s + Number(d.monto), 0)
         const capitalInicial = Math.round((Number(p.monto) - totalDesemPrestamo) * 100) / 100
         movs.push({
           key: `prestamo-${p.id}`, fecha: p.fecha_inicio, orden: orden++, tipo: 'prestamo',
-          descripcion: 'Préstamo otorgado', prestamoId: p.id,
+          descripcion: 'Préstamo otorgado', prestamoId: p.id, estadoPrestamo: p.estado,
           prestado: capitalInicial, cobrado: 0, interesDelCobro: 0, capitalDelCobro: 0, capitalDelta: capitalInicial,
         })
       }
@@ -104,7 +107,7 @@ function ReporteMovimientoContent() {
         const esCapitalizacion = (d.notas || '').startsWith('Interés capitalizado')
         movs.push({
           key: `desem-${d.id}`, fecha: d.fecha, orden: orden++, tipo: esCapitalizacion ? 'capitalizacion' : 'adicional',
-          descripcion: d.notas || 'Préstamo adicional', prestamoId: d.prestamo_id,
+          descripcion: d.notas || 'Préstamo adicional', prestamoId: d.prestamo_id, estadoPrestamo: estadoDe.get(d.prestamo_id) ?? '',
           prestado: Number(d.monto), cobrado: 0, interesDelCobro: 0, capitalDelCobro: 0, capitalDelta: Number(d.monto),
         })
       }
@@ -137,7 +140,7 @@ function ReporteMovimientoContent() {
         movs.push({
           key: `pago-${pago.id}`, fecha: pago.fecha, orden: orden++, tipo: 'pago',
           descripcion: `Pago cuota #${cuota?.numero ?? '?'} · ${pago.tipo} · ${FORMA_PAGO_LABEL[pago.forma_pago]}`,
-          prestamoId: pago.prestamo_id, prestado: 0, cobrado: Number(pago.monto),
+          prestamoId: pago.prestamo_id, estadoPrestamo: estadoDe.get(pago.prestamo_id) ?? '', prestado: 0, cobrado: Number(pago.monto),
           interesDelCobro, capitalDelCobro, capitalDelta: -capitalDelCobro,
         })
       }
@@ -162,7 +165,8 @@ function ReporteMovimientoContent() {
   // El filtro tampoco altera el saldo: cada fila conserva el saldo real tras ese movimiento.
   const filas = useMemo(() => {
     const visibles = conSaldo.filter(m =>
-      filtroTipo === 'todos' || (filtroTipo === 'pagos' ? m.tipo === 'pago' : m.tipo !== 'pago'))
+      (filtroTipo === 'todos' || (filtroTipo === 'pagos' ? m.tipo === 'pago' : m.tipo !== 'pago')) &&
+      (!soloActivos || m.estadoPrestamo === 'activo' || m.estadoPrestamo === 'en_mora'))
     // En la vista "Préstamos" los pagos están ocultos: la fila del préstamo original
     // resume lo cobrado, el interés y el abono a capital de todos sus pagos.
     const filasVista = visibles.map(m => {
@@ -176,7 +180,14 @@ function ReporteMovimientoContent() {
       }
     })
     return ascendente ? filasVista : [...filasVista].reverse()
-  }, [conSaldo, ascendente, filtroTipo])
+  }, [conSaldo, ascendente, filtroTipo, soloActivos])
+
+  const mostrarEstado = filtroTipo === 'prestamos'
+  const ESTADO_LABEL: Record<string, string> = { activo: 'Activo', en_mora: 'En mora', pagado: 'Pagado', cancelado: 'Cancelado' }
+  const ESTADO_STYLE: Record<string, string> = {
+    activo: 'bg-emerald-100 text-emerald-800', en_mora: 'bg-red-100 text-red-800',
+    pagado: 'bg-slate-100 text-slate-600', cancelado: 'bg-slate-100 text-slate-600',
+  }
 
   const muestraCobros = (m: Movimiento) => m.tipo === 'pago' || (filtroTipo === 'prestamos' && m.tipo === 'prestamo')
 
@@ -191,7 +202,7 @@ function ReporteMovimientoContent() {
   const csvEscape = (v: string) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
 
   const exportarExcel = () => {
-    const headers = ['Fecha', 'Movimiento', 'Prestado', 'Cobrado', 'Interés', 'Abono Capital', 'Saldo Capital']
+    const headers = ['Fecha', 'Movimiento', 'Prestado', 'Cobrado', 'Interés', 'Abono Capital', 'Saldo Capital', ...(mostrarEstado ? ['Estado'] : [])]
     const filasCsv = filas.map(m => [
       m.fecha,
       `${TIPO_LABEL[m.tipo]} - ${m.descripcion}`,
@@ -200,6 +211,7 @@ function ReporteMovimientoContent() {
       muestraCobros(m) ? m.interesDelCobro.toFixed(2) : '',
       muestraCobros(m) ? m.capitalDelCobro.toFixed(2) : '',
       m.saldo.toFixed(2),
+      ...(mostrarEstado ? [ESTADO_LABEL[m.estadoPrestamo] ?? m.estadoPrestamo] : []),
     ])
     const csv = [headers, ...filasCsv].map(fila => fila.map(csvEscape).join(',')).join('\r\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
@@ -247,6 +259,10 @@ function ReporteMovimientoContent() {
             </button>
           ))}
         </div>
+        <label className="ml-4 inline-flex items-center gap-2 text-[12px] font-bold text-slate-600 cursor-pointer">
+          <input type="checkbox" checked={soloActivos} onChange={e => setSoloActivos(e.target.checked)} className="accent-emerald-600" />
+          Solo préstamos activos
+        </label>
       </div>
 
       {clienteId && movimientos.length > 0 && (
@@ -311,6 +327,7 @@ function ReporteMovimientoContent() {
                     <th className="px-4 py-2 text-right text-[11px] font-bold uppercase text-slate-500">Interés</th>
                     <th className="px-4 py-2 text-right text-[11px] font-bold uppercase text-slate-500">Abono capital</th>
                     <th className="px-4 py-2 text-right text-[11px] font-bold uppercase text-slate-500">Saldo capital</th>
+                    {mostrarEstado && <th className="px-4 py-2 text-center text-[11px] font-bold uppercase text-slate-500">Estado</th>}
                     <th className="px-4 py-2 text-center text-[11px] font-bold uppercase text-slate-500 print:hidden"></th>
                   </tr>
                 </thead>
@@ -327,6 +344,13 @@ function ReporteMovimientoContent() {
                       <td className="px-4 py-2 text-right text-amber-700">{muestraCobros(m) ? fmtMoney(m.interesDelCobro) : '—'}</td>
                       <td className="px-4 py-2 text-right text-sky-700">{muestraCobros(m) ? fmtMoney(m.capitalDelCobro) : '—'}</td>
                       <td className="px-4 py-2 text-right font-bold text-[#0f172a]">{fmtMoney(m.saldo)}</td>
+                      {mostrarEstado && (
+                        <td className="px-4 py-2 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${ESTADO_STYLE[m.estadoPrestamo] ?? 'bg-slate-100 text-slate-600'}`}>
+                            {ESTADO_LABEL[m.estadoPrestamo] ?? m.estadoPrestamo}
+                          </span>
+                        </td>
+                      )}
                       <td className="px-4 py-2 text-center print:hidden">
                         <Link href={`/dashboard/prestamos/${m.prestamoId}`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">Ver →</Link>
                       </td>
