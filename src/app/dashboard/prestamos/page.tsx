@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, primeraCuota, FRECUENCIA_LABEL, soloDecimal, diasEntre, DIAS_FRECUENCIA } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, primeraCuota, soloDecimal, diasEntre, DIAS_FRECUENCIA } from '@/lib/prestamos'
 import type { Cliente, Prestamo, Frecuencia } from '@/types'
 
 const ESTADO_STYLE: Record<string, string> = {
@@ -234,15 +234,14 @@ export default function PrestamosPage() {
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Abono capital</th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Saldo</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Tasa</th>
-                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Frecuencia</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Estado</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={11} className="py-10 text-center text-slate-400">Cargando…</td></tr>
+                <tr><td colSpan={10} className="py-10 text-center text-slate-400">Cargando…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={11} className="py-10 text-center text-slate-400">Sin préstamos</td></tr>
+                <tr><td colSpan={10} className="py-10 text-center text-slate-400">Sin préstamos</td></tr>
               ) : filtered.map((p, i) => (
                 <tr key={p.id} className={`border-b border-[#f1f5f9] ${i % 2 === 0 ? '' : 'bg-[#f8fafc]'}`}>
                   <td className="px-4 py-2.5">
@@ -258,7 +257,6 @@ export default function PrestamosPage() {
                   <td className="px-4 py-2.5 text-right text-sky-700">{fmtMoney(resumen[p.id]?.abono ?? 0)}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(resumen[p.id]?.saldo ?? p.monto)}</td>
                   <td className="px-4 py-2.5 text-center text-slate-600">{p.tasa_interes}%</td>
-                  <td className="px-4 py-2.5 text-center text-slate-600">{FRECUENCIA_LABEL[p.frecuencia]}</td>
                   <td className="px-4 py-2.5 text-center">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${ESTADO_STYLE[p.estado]}`}>
                       {ESTADO_LABEL[p.estado]}
@@ -277,7 +275,7 @@ export default function PrestamosPage() {
                   <td className="px-4 py-2.5 text-right text-amber-700">{fmtMoney(suma('interes'))}</td>
                   <td className="px-4 py-2.5 text-right text-sky-700">{fmtMoney(suma('abono'))}</td>
                   <td className="px-4 py-2.5 text-right text-[#0f172a]">{fmtMoney(filtered.reduce((s, p) => s + (resumen[p.id]?.saldo ?? Number(p.monto)), 0))}</td>
-                  <td colSpan={3}></td>
+                  <td colSpan={2}></td>
                 </tr>
               </tfoot>
             )}
