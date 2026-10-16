@@ -25,13 +25,15 @@ function emptyForm() {
   }
 }
 
+interface Resumen { inicial: number; saldo: number; prestado: number; cobrado: number; interes: number; abono: number }
+
 export default function PrestamosPage() {
   const [prestamos, setPrestamos] = useState<Prestamo[]>([])
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [orden, setOrden] = useState<{ col: 'cliente' | 'inicio'; asc: boolean } | null>(null)
-  const [resumen, setResumen] = useState<Record<number, { inicial: number; saldo: number }>>({})
+  const [resumen, setResumen] = useState<Record<number, Resumen>>({})
   const [modal, setModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(emptyForm())
@@ -51,15 +53,20 @@ export default function PrestamosPage() {
       adicionales.set(d.prestamo_id, (adicionales.get(d.prestamo_id) ?? 0) + Number(d.monto))
     }
     const abonos = new Map<number, number>()
+    const cobrados = new Map<number, number>()
     for (const c of (cuoRes.data || []) as { prestamo_id: number; monto_pagado: number; interes: number }[]) {
       abonos.set(c.prestamo_id, (abonos.get(c.prestamo_id) ?? 0) + Math.max(0, Number(c.monto_pagado) - Number(c.interes)))
+      cobrados.set(c.prestamo_id, (cobrados.get(c.prestamo_id) ?? 0) + Number(c.monto_pagado))
     }
     const redondear = (n: number) => Math.round(n * 100) / 100
-    const res: Record<number, { inicial: number; saldo: number }> = {}
+    const res: Record<number, Resumen> = {}
     for (const p of (presRes.data || []) as { id: number; monto: number }[]) {
+      const abono = abonos.get(p.id) ?? 0
+      const cobrado = cobrados.get(p.id) ?? 0
       res[p.id] = {
         inicial: redondear(Number(p.monto) - (adicionales.get(p.id) ?? 0)),
-        saldo: Math.max(0, redondear(Number(p.monto) - (abonos.get(p.id) ?? 0))),
+        saldo: Math.max(0, redondear(Number(p.monto) - abono)),
+        prestado: Number(p.monto), cobrado, abono, interes: cobrado - abono,
       }
     }
     setResumen(res)
@@ -80,6 +87,8 @@ export default function PrestamosPage() {
     const r = orden.col === 'cliente' ? porCliente || porInicio : porInicio || porCliente
     return orden.asc ? r : -r
   })
+
+  const suma = (k: keyof Resumen) => filtered.reduce((s, p) => s + (resumen[p.id]?.[k] ?? (k === 'inicial' || k === 'saldo' || k === 'prestado' ? Number(p.monto) : 0)), 0)
 
   const cambiarOrden = (col: 'cliente' | 'inicio') =>
     setOrden(o => o?.col === col ? { col, asc: !o.asc } : { col, asc: true })
@@ -159,6 +168,31 @@ export default function PrestamosPage() {
           className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400"
         />
       </div>
+
+      {!loading && filtered.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
+          <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
+            <div className="text-[9px] font-bold text-slate-500 uppercase mb-1">Total prestado</div>
+            <div className="text-[20px] font-extrabold text-[#0f172a]">{fmtMoney(suma('prestado'))}</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
+            <div className="text-[9px] font-bold text-emerald-700 uppercase mb-1">Total cobrado</div>
+            <div className="text-[20px] font-extrabold text-emerald-700">{fmtMoney(suma('cobrado'))}</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
+            <div className="text-[9px] font-bold text-amber-700 uppercase mb-1">Interés cobrado</div>
+            <div className="text-[20px] font-extrabold text-amber-700">{fmtMoney(suma('interes'))}</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
+            <div className="text-[9px] font-bold text-sky-700 uppercase mb-1">Abonado a capital</div>
+            <div className="text-[20px] font-extrabold text-sky-700">{fmtMoney(suma('abono'))}</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
+            <div className="text-[9px] font-bold text-red-600 uppercase mb-1">Saldo de capital pendiente</div>
+            <div className="text-[20px] font-extrabold text-red-600">{fmtMoney(suma('saldo'))}</div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-[#e2e8f0] overflow-hidden">
         <div className="overflow-x-auto">
