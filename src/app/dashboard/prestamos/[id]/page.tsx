@@ -448,6 +448,16 @@ export default function PrestamoDetallePage() {
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="bg-[#f8fafc] border-t-2 border-[#e2e8f0] font-extrabold">
+                <td className="px-4 py-2.5 text-[#0f172a]" colSpan={3}>TOTAL</td>
+                <td className="px-4 py-2.5 text-right text-amber-700">{fmtMoney(cuotasVigentes.reduce((s, c) => s + Number(c.interes), 0))}</td>
+                <td className="px-4 py-2.5 text-right text-sky-700">{fmtMoney(totalAbonoCapital)}</td>
+                <td className="px-4 py-2.5 text-right text-[#0f172a]">{fmtMoney(cuotasVigentes.reduce((s, c) => s + totalCuota(c), 0))}</td>
+                <td className="px-4 py-2.5 text-right text-emerald-700">{fmtMoney(totalPagado)}</td>
+                <td colSpan={2}></td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
