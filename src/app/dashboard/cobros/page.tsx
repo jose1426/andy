@@ -108,6 +108,11 @@ export default function CobrosPage() {
   const filtered = cuotas.filter(c => {
     const txt = `${c.prestamo.cliente.nombre} ${c.prestamo.cliente.apellido ?? ''} ${c.prestamo.cliente.cedula ?? ''}`.toLowerCase()
     return !search || txt.includes(search.toLowerCase())
+  }).sort((a, b) => {
+    const nombre = (c: CuotaRow) => `${c.prestamo.cliente.nombre} ${c.prestamo.cliente.apellido ?? ''}`.trim()
+    return nombre(a).localeCompare(nombre(b), 'es')
+      || a.prestamo.fecha_inicio.localeCompare(b.prestamo.fecha_inicio)
+      || a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)
   })
 
   const abrirPago = async (c: CuotaRow) => {
