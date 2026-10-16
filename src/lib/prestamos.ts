@@ -152,14 +152,12 @@ export function primeraCuota(
  */
 export function cuotasFaltantesHastaHoy(
   frecuencia: Frecuencia, tasaInteres: number, saldoCapital: number,
-  ultimoNumero: number, ultimaFechaVencimiento: string, ultimaPagada = false,
+  ultimoNumero: number, ultimaFechaVencimiento: string,
 ): CuotaNueva[] {
   if (saldoCapital <= 0) return []
   const hoy = hoyPanama()
-  // Ya hay una cuota futura generada y sin pagar (la próxima por venir): no crear otra encima.
-  // Si esa cuota futura ya se pagó por adelantado, se genera la siguiente quincena
-  // para que el cliente siga apareciendo en Cobros.
-  if (ultimaFechaVencimiento > hoy && !ultimaPagada) return []
+  // Ya hay una cuota futura generada (la próxima por venir): no crear otra encima.
+  if (ultimaFechaVencimiento > hoy) return []
   const nuevas: CuotaNueva[] = []
   let numero = ultimoNumero
   let fecha = ultimaFechaVencimiento
@@ -307,7 +305,7 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
 
     // 3) Generar las cuotas que falten hasta hoy sobre el saldo vigente.
     const ultima = cuotasList.reduce((max: any, c: any) => c.numero > max.numero ? c : max, cuotasList[0])
-    const nuevas = cuotasFaltantesHastaHoy(p.frecuencia, p.tasa_interes, saldo, ultima.numero, ultima.fecha_vencimiento, ultima.estado === 'pagada')
+    const nuevas = cuotasFaltantesHastaHoy(p.frecuencia, p.tasa_interes, saldo, ultima.numero, ultima.fecha_vencimiento)
     if (nuevas.length) {
       await supabase.from('cuotas').insert(nuevas.map(c => ({
         ...c, prestamo_id: p.id, estado: 'pendiente',
