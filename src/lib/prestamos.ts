@@ -204,8 +204,7 @@ export const DIAS_GRACIA_CAPITALIZACION = 1
 
 /**
  * Recorre los préstamos activos/en mora (o uno solo si se pasa prestamoId) y:
- * 1. Capitaliza al capital el interés de cuotas vencidas hace 1+ día sin pagar
- *    (se registra como un desembolso con nota, y la cuota queda "capitalizada").
+ * 1. (La capitalización del interés vencido es manual, no se hace aquí.)
  * 2. Recalcula el interés de las cuotas abiertas restantes sobre el saldo resultante.
  * 3. Genera las cuotas que falten hasta hoy.
  * 4. Marca como atrasada la que venció sin pagar (aún dentro de los días de gracia).
@@ -217,7 +216,6 @@ export const DIAS_GRACIA_CAPITALIZACION = 1
  */
 export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any, any, any>, prestamoId?: number) {
   const hoy = new Date().toISOString().slice(0, 10)
-  const limiteCapitalizacion = addDias(hoy, -DIAS_GRACIA_CAPITALIZACION)
 
   let query = supabase.from('prestamos').select('id,monto,tasa_interes,frecuencia,estado,carga_historica,fecha_inicio,sin_prorrateo').in('estado', ['activo', 'en_mora'])
   if (prestamoId) query = query.eq('id', prestamoId)
@@ -228,24 +226,12 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
     const { data: cuotasIniciales } = await supabase.from('cuotas').select('*').eq('prestamo_id', p.id).order('numero')
     if (!cuotasIniciales?.length) continue
 
-    // 1) Capitalizar el interés no pagado de cuotas vencidas hace 1+ día.
-    // Todo el trabajo (reclamar la cuota, registrar el desembolso, sumar el
-    // capital) ocurre en una sola transacción de Postgres (fn_capitalizar_cuota),
-    // así que dos cargas concurrentes (p. ej. React StrictMode, u otra pestaña)
-    // no pueden duplicar el desembolso ni perder el aumento de capital.
-    // En modo "carga histórica" (préstamos viejos que se están registrando
-    // ahora, ya pagados a tiempo en su momento) se omite: la mora/capitalización
-    // solo debe calcularse desde hoy en adelante, una vez el usuario termine
-    // de registrar los pagos pasados y desactive el modo.
-    const paraCapitalizar = p.carga_historica ? [] : cuotasIniciales.filter((c: any) =>
-      (c.estado === 'pendiente' || c.estado === 'atrasada' || c.estado === 'parcial') && c.fecha_vencimiento <= limiteCapitalizacion
-    )
-    for (const c of paraCapitalizar) {
-      await supabase.rpc('fn_capitalizar_cuota', { p_cuota_id: c.id })
-    }
-
-    // A partir de aquí se relee todo en frío: no se reutiliza nada calculado
-    // antes de la capitalización, para no arrastrar estados que hayan cambiado.
+    // La capitalización del interés vencido ya NO es automática: la decide el
+    // usuario con el botón "Capitalizar" del detalle del préstamo, que llama a
+    // fn_capitalizar_cuota (una sola transacción de Postgres: marca la cuota,
+    // registra el desembolso y suma el capital). Mientras no se capitalice, la
+    // cuota vencida queda "atrasada" y el préstamo "en mora".
+    // Se relee todo en frío para no arrastrar estados que hayan cambiado.
     const [{ data: prestamoFresh }, { data: cuotasList }, { data: desembolsosList }] = await Promise.all([
       supabase.from('prestamos').select('monto').eq('id', p.id).single(),
       supabase.from('cuotas').select('*').eq('prestamo_id', p.id).order('numero'),

@@ -68,6 +68,33 @@ export default function PrestamoDetallePage() {
 
   useEffect(() => { load() }, [load])
 
+  const hoyISO = new Date().toISOString().slice(0, 10)
+  const pendienteCuota = (c: Cuota) => Math.round((c.monto_cuota - c.monto_pagado) * 100) / 100
+  const puedeCapitalizar = (c: Cuota) =>
+    !prestamo?.carga_historica && c.fecha_vencimiento < hoyISO && c.estado !== 'pagada' && c.estado !== 'capitalizada' && pendienteCuota(c) > 0
+
+  const capitalizar = async (c: Cuota) => {
+    const monto = pendienteCuota(c)
+    if (!window.confirm(`¿Capitalizar ${fmtMoney(monto)} de interés pendiente de la cuota #${c.numero}? Se sumará al capital del préstamo.`)) return
+    const { data, error } = await supabase.rpc('fn_capitalizar_cuota', { p_cuota_id: c.id })
+    if (error) { toast.error('Error: ' + error.message); return }
+    if (!data) { toast.error('No se pudo capitalizar: la cuota ya no tiene saldo pendiente.'); return }
+    toast.success(`Interés de ${fmtMoney(monto)} capitalizado.`)
+    load()
+  }
+
+  const capitalizarVencido = async () => {
+    const vencidas = cuotas.filter(puedeCapitalizar)
+    const total = Math.round(vencidas.reduce((s, c) => s + pendienteCuota(c), 0) * 100) / 100
+    if (!vencidas.length || !window.confirm(`¿Capitalizar ${fmtMoney(total)} de interés vencido (${vencidas.length} cuota${vencidas.length > 1 ? 's' : ''}) de este préstamo? Se sumará al capital.`)) return
+    for (const c of vencidas) {
+      const { error } = await supabase.rpc('fn_capitalizar_cuota', { p_cuota_id: c.id })
+      if (error) { toast.error('Error: ' + error.message); break }
+    }
+    toast.success(`Interés de ${fmtMoney(total)} capitalizado.`)
+    load()
+  }
+
   const abrirPago = (c: Cuota) => {
     setCuotaSel(c)
     const recargo = agruparCuotasCapitalizadas(cuotas).get(c.numero)?.recargo ?? 0
@@ -336,6 +363,17 @@ export default function PrestamoDetallePage() {
           </div>
         </div>
 
+        {cuotas.some(puedeCapitalizar) && (
+          <div className="px-5 py-3 bg-purple-50 border-y border-purple-200 flex items-center justify-between flex-wrap gap-2">
+            <span className="text-[12px] text-purple-900">
+              Hay interés vencido sin pagar. Tú decides si se suma al capital.
+            </span>
+            <button onClick={capitalizarVencido} className="px-3 py-1.5 rounded-md bg-purple-600 text-white text-[12px] font-bold hover:bg-purple-700">
+              🔄 Capitalizar interés vencido
+            </button>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-[13px]">
             <thead>
@@ -373,6 +411,11 @@ export default function PrestamoDetallePage() {
                     {c.estado !== 'pagada' && c.estado !== 'capitalizada' && (
                       <button onClick={() => abrirPago(c)} className="px-3 py-1 rounded-md bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700">
                         💰 Cobrar
+                      </button>
+                    )}
+                    {puedeCapitalizar(c) && (
+                      <button onClick={() => capitalizar(c)} className="ml-1.5 px-3 py-1 rounded-md bg-purple-600 text-white text-[11px] font-bold hover:bg-purple-700">
+                        🔄 Capitalizar
                       </button>
                     )}
                   </td>
