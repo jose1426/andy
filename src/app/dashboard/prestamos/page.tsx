@@ -33,6 +33,7 @@ export default function PrestamosPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [orden, setOrden] = useState<{ col: 'cliente' | 'inicio'; asc: boolean } | null>(null)
+  const [filtroEstado, setFiltroEstado] = useState<'todos' | 'activos' | 'pagados'>('todos')
   const [resumen, setResumen] = useState<Record<number, Resumen>>({})
   const [modal, setModal] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -78,7 +79,9 @@ export default function PrestamosPage() {
 
   const filtered = prestamos.filter(p => {
     const txt = `${p.cliente?.nombre ?? ''} ${p.cliente?.apellido ?? ''} ${p.cliente?.cedula ?? ''}`.toLowerCase()
-    return !search || txt.includes(search.toLowerCase())
+    const coincideEstado = filtroEstado === 'todos'
+      || (filtroEstado === 'pagados' ? p.estado === 'pagado' : p.estado === 'activo' || p.estado === 'en_mora')
+    return coincideEstado && (!search || txt.includes(search.toLowerCase()))
   }).sort((a, b) => {
     if (!orden) return 0 // sin orden elegido: se respeta el de la consulta (más recientes primero)
     const nombre = (p: Prestamo) => `${p.cliente?.nombre ?? ''} ${p.cliente?.apellido ?? ''}`.trim()
@@ -167,6 +170,14 @@ export default function PrestamosPage() {
           placeholder="🔍 Buscar por cliente…"
           className="w-full px-3 py-2 border border-[#e2e8f0] rounded-lg text-[13px] outline-none focus:border-emerald-400"
         />
+        <div className="inline-flex rounded-lg border border-[#e2e8f0] overflow-hidden mt-3">
+          {([['todos', 'Todos'], ['activos', 'Activos'], ['pagados', 'Pagados']] as const).map(([v, label]) => (
+            <button key={v} type="button" onClick={() => setFiltroEstado(v)}
+              className={`px-3.5 py-1.5 text-[12px] font-bold ${filtroEstado === v ? 'bg-emerald-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {!loading && filtered.length > 0 && (
