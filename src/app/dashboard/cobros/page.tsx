@@ -63,6 +63,7 @@ export default function CobrosPage() {
   const [pagos, setPagos] = useState<PagoRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [orden, setOrden] = useState<{ col: 'cliente' | 'inicio' | 'vencimiento'; asc: boolean }>({ col: 'vencimiento', asc: true })
 
   const [modal, setModal] = useState(false)
   const [cuotaSel, setCuotaSel] = useState<CuotaRow | null>(null)
@@ -110,10 +111,18 @@ export default function CobrosPage() {
     return !search || txt.includes(search.toLowerCase())
   }).sort((a, b) => {
     const nombre = (c: CuotaRow) => `${c.prestamo.cliente.nombre} ${c.prestamo.cliente.apellido ?? ''}`.trim()
-    return nombre(a).localeCompare(nombre(b), 'es')
-      || a.prestamo.fecha_inicio.localeCompare(b.prestamo.fecha_inicio)
-      || a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)
+    const porCliente = nombre(a).localeCompare(nombre(b), 'es')
+    const porInicio = a.prestamo.fecha_inicio.localeCompare(b.prestamo.fecha_inicio)
+    const porVencimiento = a.fecha_vencimiento.localeCompare(b.fecha_vencimiento)
+    const r = orden.col === 'cliente' ? porCliente || porInicio || porVencimiento
+      : orden.col === 'inicio' ? porInicio || porCliente || porVencimiento
+      : porVencimiento || porCliente || porInicio
+    return orden.asc ? r : -r
   })
+
+  const cambiarOrden = (col: 'cliente' | 'inicio' | 'vencimiento') =>
+    setOrden(o => o.col === col ? { col, asc: !o.asc } : { col, asc: true })
+  const flecha = (col: 'cliente' | 'inicio' | 'vencimiento') => orden.col === col ? (orden.asc ? ' ▲' : ' ▼') : ''
 
   const abrirPago = async (c: CuotaRow) => {
     setCuotaSel(c)
@@ -209,10 +218,16 @@ export default function CobrosPage() {
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr className="bg-[#f1f5f9] border-b-2 border-[#e2e8f0]">
-                <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">Cliente</th>
-                <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">Inicio Préstamo</th>
+                <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">
+                  <button type="button" onClick={() => cambiarOrden('cliente')} title="Ordenar por cliente" className="uppercase font-bold hover:text-emerald-700">Cliente{flecha('cliente')}</button>
+                </th>
+                <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">
+                  <button type="button" onClick={() => cambiarOrden('inicio')} title="Ordenar por inicio del préstamo" className="uppercase font-bold hover:text-emerald-700">Inicio Préstamo{flecha('inicio')}</button>
+                </th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Cuota</th>
-                <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">Vencimiento</th>
+                <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">
+                  <button type="button" onClick={() => cambiarOrden('vencimiento')} title="Ordenar por vencimiento" className="uppercase font-bold hover:text-emerald-700">Vencimiento{flecha('vencimiento')}</button>
+                </th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Saldo</th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Pago/Interés</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Estado</th>
