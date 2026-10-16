@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, agruparCuotasCapitalizadas, reconciliarPrestamosVencidos, hoyPanama, soloDecimal, telefonoWhatsapp, FORMA_PAGO_LABEL } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, agruparCuotasCapitalizadas, reconciliarPrestamosVencidos, hoyPanama, repartirPagoPorAntiguedad, registrarPagoPorAntiguedad, soloDecimal, telefonoWhatsapp, FORMA_PAGO_LABEL } from '@/lib/prestamos'
 import type { Cuota, FormaPago } from '@/types'
 
 interface CuotaRow extends Cuota {
@@ -126,11 +126,16 @@ export default function CobrosPage() {
 
   const abrirPago = async (c: CuotaRow) => {
     setCuotaSel(c)
-    setMontoPago(String(saldoCuota(c).toFixed(2)))
     setFechaPago(hoyPanama())
     setFormaPago('efectivo')
     const { data } = await supabase.from('cuotas').select('*').eq('prestamo_id', c.prestamo.id).order('numero')
-    setCuotasPrestamo((data || []) as Cuota[])
+    const todas = (data || []) as Cuota[]
+    setCuotasPrestamo(todas)
+    // Por defecto se propone pagar todo lo abierto hasta esta cuota (de la más antigua a ella).
+    const grupos = agruparCuotasCapitalizadas(todas)
+    const hastaEsta = repartirPagoPorAntiguedad(todas, x => grupos.get(x.numero)?.recargo ?? 0, 0)
+      .filter(a => a.cuota.numero <= c.numero)
+    setMontoPago(String(hastaEsta.reduce((s, a) => s + a.capacidad, 0).toFixed(2)))
     setModal(true)
   }
   const cerrarModal = () => { setModal(false); setCuotaSel(null); setMontoPago(''); setFechaPago(''); setCuotasPrestamo([]) }
@@ -142,44 +147,12 @@ export default function CobrosPage() {
 
     setSaving(true)
     try {
-      const interesPagadoPrevio = Math.min(cuotaSel.monto_pagado, cuotaSel.interes)
-      const capitalPagadoPrevio = Math.max(0, cuotaSel.monto_pagado - cuotaSel.interes)
-      const nuevoMontoPagado = cuotaSel.monto_pagado + monto
-      const nuevoInteresPagado = Math.min(nuevoMontoPagado, cuotaSel.interes)
-      const nuevoCapitalPagado = Math.max(0, nuevoMontoPagado - cuotaSel.interes)
-      const abonoCapital = nuevoCapitalPagado - capitalPagadoPrevio
-      const abonoInteres = nuevoInteresPagado - interesPagadoPrevio
-      const tipo = abonoCapital > 0 && abonoInteres > 0 ? 'mixto' : abonoCapital > 0 ? 'capital' : 'interes'
-      const nuevoEstadoCuota = nuevoMontoPagado >= cuotaSel.monto_cuota - 0.001 ? 'pagada' : 'parcial'
-
-      const { error: errPago } = await supabase.from('pagos').insert({
-        cuota_id: cuotaSel.id, prestamo_id: cuotaSel.prestamo.id, monto, tipo, fecha: fechaPago, forma_pago: formaPago,
+      // El monto se reparte desde la cuota abierta más antigua hacia adelante.
+      const grupos = agruparCuotasCapitalizadas(cuotasPrestamo)
+      const asignaciones = repartirPagoPorAntiguedad(cuotasPrestamo, x => grupos.get(x.numero)?.recargo ?? 0, monto)
+      await registrarPagoPorAntiguedad(supabase, {
+        asignaciones, cuotasPrestamo, prestamo: cuotaSel.prestamo, fecha: fechaPago, formaPago,
       })
-      if (errPago) throw errPago
-
-      const { error: errCuota } = await supabase.from('cuotas')
-        .update({ monto_pagado: nuevoMontoPagado, estado: nuevoEstadoCuota })
-        .eq('id', cuotaSel.id)
-      if (errCuota) throw errCuota
-
-      if (abonoCapital > 0) {
-        const capitalPagadoTotal = cuotasPrestamo
-          .filter(c => c.id !== cuotaSel.id)
-          .reduce((s, c) => s + Math.max(0, c.monto_pagado - c.interes), 0) + nuevoCapitalPagado
-        const nuevoSaldo = Math.max(0, Math.round((cuotaSel.prestamo.monto - capitalPagadoTotal) * 100) / 100)
-        const tasa = cuotaSel.prestamo.tasa_interes / 100
-        const futuras = cuotasPrestamo.filter(c => c.id !== cuotaSel.id && c.numero > cuotaSel.numero && (c.estado === 'pendiente' || c.estado === 'atrasada'))
-
-        for (const c of futuras) {
-          const nuevoInteres = Math.round(nuevoSaldo * tasa * 100) / 100
-          await supabase.from('cuotas').update({
-            interes: nuevoInteres, capital: 0, monto_cuota: nuevoInteres, saldo_capital: nuevoSaldo,
-          }).eq('id', c.id)
-        }
-        if (nuevoSaldo <= 0) {
-          await supabase.from('prestamos').update({ estado: 'pagado' }).eq('id', cuotaSel.prestamo.id)
-        }
-      }
 
       toast.success('Pago registrado.')
       cerrarModal()
@@ -314,12 +287,32 @@ export default function CobrosPage() {
               <button onClick={cerrarModal} className="text-white/80 hover:text-white text-lg font-bold">✕</button>
             </div>
             <div className="p-6 space-y-3">
-              <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-[12px] text-slate-600 space-y-1">
-                <div className="flex justify-between"><span>Interés cuota #{cuotaSel.numero}</span><b>{fmtMoney(cuotaSel.monto_cuota)}</b></div>
-                {(cuotaSel.recargo ?? 0) > 0 && <div className="flex justify-between text-purple-700"><span>Recargo intereses atrasados (cuota #{cuotaSel.etiqueta})</span><b>{fmtMoney(cuotaSel.recargo)}</b></div>}
-                <div className="flex justify-between"><span>Ya pagado</span><b>{fmtMoney(cuotaSel.monto_pagado)}</b></div>
-                <div className="flex justify-between text-red-600"><span>Saldo de esta cuota</span><b>{fmtMoney(saldoCuota(cuotaSel))}</b></div>
-              </div>
+              {(() => {
+                const grupos = agruparCuotasCapitalizadas(cuotasPrestamo)
+                const recargoDe = (x: Cuota) => grupos.get(x.numero)?.recargo ?? 0
+                const asignaciones = repartirPagoPorAntiguedad(cuotasPrestamo, recargoDe, parseFloat(montoPago) || 0)
+                const totalDebe = asignaciones.reduce((s, a) => s + a.capacidad, 0)
+                return (
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-[12px] text-slate-600 space-y-1.5">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase">Cuotas a pagar · se paga desde la más antigua</div>
+                    {asignaciones.map(a => (
+                      <div key={a.cuota.id} className="flex justify-between gap-3">
+                        <span>
+                          #{grupos.get(a.cuota.numero)?.etiqueta ?? a.cuota.numero} · {fmtFecha(a.cuota.fecha_vencimiento)}
+                          {recargoDe(a.cuota) > 0 && <span className="block text-[10px] text-purple-700">incl. recargo {fmtMoney(recargoDe(a.cuota))}</span>}
+                        </span>
+                        <span className="text-right whitespace-nowrap">
+                          debe {fmtMoney(a.capacidad)}
+                          <b className={`block ${a.aplicar > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>paga {fmtMoney(a.aplicar)}</b>
+                        </span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between border-t border-slate-200 pt-1.5 text-red-600">
+                      <span>Total que debe</span><b>{fmtMoney(totalDebe)}</b>
+                    </div>
+                  </div>
+                )
+              })()}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto a pagar</label>
@@ -341,7 +334,7 @@ export default function CobrosPage() {
                   <option value="transferencia">Transferencia</option>
                 </select>
               </div>
-              <p className="text-[11px] text-slate-400">Si el monto supera el interés de la cuota, el excedente se abona a capital y reduce el interés de las próximas cuotas.</p>
+              <p className="text-[11px] text-slate-400">El monto se reparte desde la cuota más antigua. Si sobra después de la última, el excedente se abona a capital y reduce el interés de las próximas cuotas.</p>
               <div className="flex justify-end gap-2.5 pt-2">
                 <button onClick={cerrarModal} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
                 <button onClick={registrarPago} disabled={saving} className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold disabled:opacity-60">

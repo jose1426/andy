@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Frecuencia, FormaPago } from '@/types'
+import type { Frecuencia, FormaPago, Cuota } from '@/types'
 
 export const FORMA_PAGO_LABEL: Record<FormaPago, string> = { yappy: 'Yappy', efectivo: 'Efectivo', transferencia: 'Transferencia' }
 
@@ -12,6 +12,85 @@ export const fmtFecha = (d: string | null | undefined) =>
 /** Fecha de hoy (YYYY-MM-DD) en hora de Panamá. toISOString() da la fecha UTC, que
  * después de las 7 pm en Panamá ya es "mañana" y adelantaba el vencimiento de las cuotas. */
 export const hoyPanama = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Panama' }).format(new Date())
+
+const r2 = (n: number) => Math.round(n * 100) / 100
+
+export interface AsignacionPago<T extends Cuota = Cuota> { cuota: T; capacidad: number; aplicar: number }
+
+/**
+ * Reparte un monto entre las cuotas abiertas de un préstamo, de la más antigua a la más
+ * reciente. Cada cuota recibe hasta lo que debe (interés + recargo − ya pagado); si sobra
+ * después de la última, el excedente se suma a esa última cuota (y por tanto abona a capital,
+ * igual que cuando se paga de más una sola cuota).
+ */
+export function repartirPagoPorAntiguedad<T extends Cuota>(
+  cuotas: T[], recargoDe: (c: T) => number, monto: number,
+): AsignacionPago<T>[] {
+  const abiertas = cuotas
+    .filter(c => c.estado === 'pendiente' || c.estado === 'atrasada' || c.estado === 'parcial')
+    .sort((a, b) => a.numero - b.numero)
+  let resto = r2(Math.max(0, monto))
+  const res = abiertas.map(c => {
+    const capacidad = Math.max(0, r2(Number(c.monto_cuota) + recargoDe(c) - Number(c.monto_pagado)))
+    const aplicar = Math.min(resto, capacidad)
+    resto = r2(resto - aplicar)
+    return { cuota: c, capacidad, aplicar }
+  })
+  if (resto > 0 && res.length) res[res.length - 1].aplicar = r2(res[res.length - 1].aplicar + resto)
+  return res
+}
+
+/** Registra un pago repartido por antigüedad: un pago por cada cuota que recibe dinero. */
+export async function registrarPagoPorAntiguedad(
+  supabase: SupabaseClient<any, any, any>,
+  p: {
+    asignaciones: AsignacionPago<Cuota>[]; cuotasPrestamo: Cuota[]
+    prestamo: { id: number; monto: number; tasa_interes: number }
+    fecha: string; formaPago: FormaPago
+  },
+) {
+  const aplicadas = p.asignaciones.filter(a => a.aplicar > 0)
+  const nuevoPagado = new Map<number, number>()
+  const nuevoEstado = new Map<number, string>()
+  let hayAbonoCapital = false
+
+  for (const a of aplicadas) {
+    const c = a.cuota
+    const previo = Number(c.monto_pagado)
+    const nuevo = r2(previo + a.aplicar)
+    const interes = Number(c.interes)
+    const abonoCapital = Math.max(0, nuevo - interes) - Math.max(0, previo - interes)
+    const abonoInteres = Math.min(nuevo, interes) - Math.min(previo, interes)
+    if (abonoCapital > 0) hayAbonoCapital = true
+    const tipo = abonoCapital > 0 && abonoInteres > 0 ? 'mixto' : abonoCapital > 0 ? 'capital' : 'interes'
+    const estado = nuevo >= Number(c.monto_cuota) - 0.001 ? 'pagada' : 'parcial'
+
+    const { error: errPago } = await supabase.from('pagos').insert({
+      cuota_id: c.id, prestamo_id: p.prestamo.id, monto: a.aplicar, tipo, fecha: p.fecha, forma_pago: p.formaPago,
+    })
+    if (errPago) throw errPago
+    const { error: errCuota } = await supabase.from('cuotas').update({ monto_pagado: nuevo, estado }).eq('id', c.id)
+    if (errCuota) throw errCuota
+    nuevoPagado.set(c.id, nuevo)
+    nuevoEstado.set(c.id, estado)
+  }
+
+  if (!hayAbonoCapital) return
+  // Hubo abono a capital: recalcular el interés de las cuotas que siguen abiertas sobre el nuevo saldo.
+  const capitalPagadoTotal = p.cuotasPrestamo
+    .reduce((s, c) => s + Math.max(0, (nuevoPagado.get(c.id) ?? Number(c.monto_pagado)) - Number(c.interes)), 0)
+  const nuevoSaldo = Math.max(0, r2(Number(p.prestamo.monto) - capitalPagadoTotal))
+  const nuevoInteres = r2(nuevoSaldo * (p.prestamo.tasa_interes / 100))
+  const ultimaPagada = Math.max(...aplicadas.map(a => a.cuota.numero))
+  const futuras = p.cuotasPrestamo.filter(c => c.numero > ultimaPagada
+    && ((nuevoEstado.get(c.id) ?? c.estado) === 'pendiente' || (nuevoEstado.get(c.id) ?? c.estado) === 'atrasada'))
+  for (const c of futuras) {
+    await supabase.from('cuotas').update({
+      interes: nuevoInteres, capital: 0, monto_cuota: nuevoInteres, saldo_capital: nuevoSaldo,
+    }).eq('id', c.id)
+  }
+  if (nuevoSaldo <= 0) await supabase.from('prestamos').update({ estado: 'pagado' }).eq('id', p.prestamo.id)
+}
 
 /** Normaliza un teléfono local a formato internacional (Panamá +507) para enlaces wa.me. */
 export function telefonoWhatsapp(tel: string | null | undefined): string {
@@ -219,8 +298,6 @@ export const DIAS_GRACIA_CAPITALIZACION = 1
  * de haber visitado cada préstamo individualmente.
  */
 export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any, any, any>, prestamoId?: number) {
-  const hoy = hoyPanama()
-
   let query = supabase.from('prestamos').select('id,monto,tasa_interes,frecuencia,estado,carga_historica,fecha_inicio,sin_prorrateo').in('estado', ['activo', 'en_mora'])
   if (prestamoId) query = query.eq('id', prestamoId)
   const { data: prestamosList } = await query
