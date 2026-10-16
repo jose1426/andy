@@ -31,18 +31,38 @@ export default function PrestamosPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [orden, setOrden] = useState<{ col: 'cliente' | 'inicio'; asc: boolean } | null>(null)
+  const [resumen, setResumen] = useState<Record<number, { inicial: number; saldo: number }>>({})
   const [modal, setModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(emptyForm())
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [presRes, cliRes] = await Promise.all([
+    const [presRes, cliRes, desRes, cuoRes] = await Promise.all([
       supabase.from('prestamos').select('*, cliente:clientes(*)').order('created_at', { ascending: false }),
       supabase.from('clientes').select('*').eq('activo', true).order('nombre'),
+      supabase.from('desembolsos').select('prestamo_id,monto'),
+      supabase.from('cuotas').select('prestamo_id,monto_pagado,interes'),
     ])
     setLoading(false)
     if (presRes.error) { toast.error(presRes.error.message); return }
+    const adicionales = new Map<number, number>()
+    for (const d of (desRes.data || []) as { prestamo_id: number; monto: number }[]) {
+      adicionales.set(d.prestamo_id, (adicionales.get(d.prestamo_id) ?? 0) + Number(d.monto))
+    }
+    const abonos = new Map<number, number>()
+    for (const c of (cuoRes.data || []) as { prestamo_id: number; monto_pagado: number; interes: number }[]) {
+      abonos.set(c.prestamo_id, (abonos.get(c.prestamo_id) ?? 0) + Math.max(0, Number(c.monto_pagado) - Number(c.interes)))
+    }
+    const redondear = (n: number) => Math.round(n * 100) / 100
+    const res: Record<number, { inicial: number; saldo: number }> = {}
+    for (const p of (presRes.data || []) as { id: number; monto: number }[]) {
+      res[p.id] = {
+        inicial: redondear(Number(p.monto) - (adicionales.get(p.id) ?? 0)),
+        saldo: Math.max(0, redondear(Number(p.monto) - (abonos.get(p.id) ?? 0))),
+      }
+    }
+    setResumen(res)
     setPrestamos((presRes.data || []) as any)
     setClientes((cliRes.data || []) as Cliente[])
   }, [])
@@ -151,7 +171,8 @@ export default function PrestamosPage() {
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">
                   <button type="button" onClick={() => cambiarOrden('inicio')} title="Ordenar por inicio" className="uppercase font-bold hover:text-emerald-700">Inicio{flecha('inicio')}</button>
                 </th>
-                <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Monto</th>
+                <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Monto inicial</th>
+                <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Saldo</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Tasa</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Frecuencia</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Estado</th>
@@ -159,9 +180,9 @@ export default function PrestamosPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} className="py-10 text-center text-slate-400">Cargando…</td></tr>
+                <tr><td colSpan={7} className="py-10 text-center text-slate-400">Cargando…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={6} className="py-10 text-center text-slate-400">Sin préstamos</td></tr>
+                <tr><td colSpan={7} className="py-10 text-center text-slate-400">Sin préstamos</td></tr>
               ) : filtered.map((p, i) => (
                 <tr key={p.id} className={`border-b border-[#f1f5f9] ${i % 2 === 0 ? '' : 'bg-[#f8fafc]'}`}>
                   <td className="px-4 py-2.5">
@@ -170,7 +191,8 @@ export default function PrestamosPage() {
                     </Link>
                   </td>
                   <td className="px-4 py-2.5 text-center text-slate-500">{fmtFecha(p.fecha_inicio)}</td>
-                  <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(p.monto)}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-600">{fmtMoney(resumen[p.id]?.inicial ?? p.monto)}</td>
+                  <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(resumen[p.id]?.saldo ?? p.monto)}</td>
                   <td className="px-4 py-2.5 text-center text-slate-600">{p.tasa_interes}%</td>
                   <td className="px-4 py-2.5 text-center text-slate-600">{FRECUENCIA_LABEL[p.frecuencia]}</td>
                   <td className="px-4 py-2.5 text-center">
@@ -181,6 +203,16 @@ export default function PrestamosPage() {
                 </tr>
               ))}
             </tbody>
+            {!loading && filtered.length > 0 && (
+              <tfoot>
+                <tr className="bg-[#f8fafc] border-t-2 border-[#e2e8f0] font-extrabold">
+                  <td className="px-4 py-2.5 text-[#0f172a]" colSpan={2}>TOTAL ({filtered.length} préstamo{filtered.length === 1 ? '' : 's'})</td>
+                  <td className="px-4 py-2.5 text-right text-slate-700">{fmtMoney(filtered.reduce((s, p) => s + (resumen[p.id]?.inicial ?? Number(p.monto)), 0))}</td>
+                  <td className="px-4 py-2.5 text-right text-[#0f172a]">{fmtMoney(filtered.reduce((s, p) => s + (resumen[p.id]?.saldo ?? Number(p.monto)), 0))}</td>
+                  <td colSpan={3}></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
