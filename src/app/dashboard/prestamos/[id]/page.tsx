@@ -83,6 +83,32 @@ export default function PrestamoDetallePage() {
     load()
   }
 
+  const esCapitalizacion = (d: Desembolso) => (d.notas || '').startsWith('Interés capitalizado')
+
+  // Deshace una capitalización: borra el desembolso, baja el capital del préstamo y
+  // devuelve la cuota a "pendiente" (si ya se pagó después, la cuota no se toca).
+  const deshacerCapitalizacion = async (d: Desembolso) => {
+    const numero = Number((d.notas || '').match(/cuota #(\d+)/)?.[1])
+    if (!window.confirm(`¿Deshacer la capitalización de ${fmtMoney(d.monto)}? Se resta del capital del préstamo${numero ? ` y la cuota #${numero} vuelve a Pendiente` : ''}.`)) return
+
+    const { data: borrados, error: errDel } = await supabase.from('desembolsos').delete().eq('id', d.id).select('id')
+    if (errDel) { toast.error('Error: ' + errDel.message); return }
+    if (!borrados?.length) { toast.error('No se pudo deshacer: no se borró el registro.'); return }
+
+    const { data: fresco, error: errP } = await supabase.from('prestamos').select('monto').eq('id', id).single()
+    if (errP || !fresco) { toast.error('Se borró el registro pero no se pudo actualizar el capital. Avísame.'); return }
+    const { error: errUp } = await supabase.from('prestamos')
+      .update({ monto: Math.round((Number(fresco.monto) - Number(d.monto)) * 100) / 100 }).eq('id', id)
+    if (errUp) { toast.error('Se borró el registro pero no se pudo actualizar el capital. Avísame.'); return }
+
+    if (numero) {
+      await supabase.from('cuotas').update({ estado: 'pendiente' })
+        .eq('prestamo_id', id).eq('numero', numero).eq('estado', 'capitalizada')
+    }
+    toast.success('Capitalización deshecha.')
+    load()
+  }
+
   const capitalizarVencido = async () => {
     const vencidas = cuotas.filter(puedeCapitalizar)
     const total = Math.round(vencidas.reduce((s, c) => s + pendienteCuota(c), 0) * 100) / 100
@@ -444,7 +470,14 @@ export default function PrestamoDetallePage() {
                     </span>
                   )}
                 </span>
-                <span className="font-bold text-[#0f172a]">{fmtMoney(d.monto)}</span>
+                <span className="flex items-center gap-3">
+                  {esCapitalizacion(d) && (
+                    <button onClick={() => deshacerCapitalizacion(d)} className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-red-50 border border-slate-200 text-slate-600 hover:text-red-700 text-[11px] font-bold">
+                      ↩ Deshacer
+                    </button>
+                  )}
+                  <span className="font-bold text-[#0f172a]">{fmtMoney(d.monto)}</span>
+                </span>
               </div>
               )
             })}
