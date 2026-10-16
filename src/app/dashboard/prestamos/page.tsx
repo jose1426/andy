@@ -30,6 +30,7 @@ export default function PrestamosPage() {
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [orden, setOrden] = useState<{ col: 'cliente' | 'inicio'; asc: boolean } | null>(null)
   const [modal, setModal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(emptyForm())
@@ -51,7 +52,18 @@ export default function PrestamosPage() {
   const filtered = prestamos.filter(p => {
     const txt = `${p.cliente?.nombre ?? ''} ${p.cliente?.apellido ?? ''} ${p.cliente?.cedula ?? ''}`.toLowerCase()
     return !search || txt.includes(search.toLowerCase())
+  }).sort((a, b) => {
+    if (!orden) return 0 // sin orden elegido: se respeta el de la consulta (más recientes primero)
+    const nombre = (p: Prestamo) => `${p.cliente?.nombre ?? ''} ${p.cliente?.apellido ?? ''}`.trim()
+    const porCliente = nombre(a).localeCompare(nombre(b), 'es')
+    const porInicio = a.fecha_inicio.localeCompare(b.fecha_inicio)
+    const r = orden.col === 'cliente' ? porCliente || porInicio : porInicio || porCliente
+    return orden.asc ? r : -r
   })
+
+  const cambiarOrden = (col: 'cliente' | 'inicio') =>
+    setOrden(o => o?.col === col ? { col, asc: !o.asc } : { col, asc: true })
+  const flecha = (col: 'cliente' | 'inicio') => orden?.col === col ? (orden.asc ? ' ▲' : ' ▼') : ''
 
   const openNew = () => { setForm(emptyForm()); setModal(true) }
   const closeModal = () => setModal(false)
@@ -133,11 +145,15 @@ export default function PrestamosPage() {
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr className="bg-[#f1f5f9] border-b-2 border-[#e2e8f0]">
-                <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">Cliente</th>
+                <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">
+                  <button type="button" onClick={() => cambiarOrden('cliente')} title="Ordenar por cliente" className="uppercase font-bold hover:text-emerald-700">Cliente{flecha('cliente')}</button>
+                </th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Monto</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Tasa</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Frecuencia</th>
-                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Inicio</th>
+                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">
+                  <button type="button" onClick={() => cambiarOrden('inicio')} title="Ordenar por inicio" className="uppercase font-bold hover:text-emerald-700">Inicio{flecha('inicio')}</button>
+                </th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Estado</th>
               </tr>
             </thead>
