@@ -148,12 +148,12 @@ export default function PrestamosPage() {
                 <th className="px-4 py-2.5 text-left text-[11px] font-bold uppercase text-slate-500">
                   <button type="button" onClick={() => cambiarOrden('cliente')} title="Ordenar por cliente" className="uppercase font-bold hover:text-emerald-700">Cliente{flecha('cliente')}</button>
                 </th>
-                <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Monto</th>
-                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Tasa</th>
-                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Frecuencia</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">
                   <button type="button" onClick={() => cambiarOrden('inicio')} title="Ordenar por inicio" className="uppercase font-bold hover:text-emerald-700">Inicio{flecha('inicio')}</button>
                 </th>
+                <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Monto</th>
+                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Tasa</th>
+                <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Frecuencia</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Estado</th>
               </tr>
             </thead>
@@ -169,10 +169,10 @@ export default function PrestamosPage() {
                       {p.cliente?.nombre} {p.cliente?.apellido}
                     </Link>
                   </td>
+                  <td className="px-4 py-2.5 text-center text-slate-500">{fmtFecha(p.fecha_inicio)}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(p.monto)}</td>
                   <td className="px-4 py-2.5 text-center text-slate-600">{p.tasa_interes}%</td>
                   <td className="px-4 py-2.5 text-center text-slate-600">{FRECUENCIA_LABEL[p.frecuencia]}</td>
-                  <td className="px-4 py-2.5 text-center text-slate-500">{fmtFecha(p.fecha_inicio)}</td>
                   <td className="px-4 py-2.5 text-center">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${ESTADO_STYLE[p.estado]}`}>
                       {ESTADO_LABEL[p.estado]}
