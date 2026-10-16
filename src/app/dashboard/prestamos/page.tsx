@@ -25,7 +25,7 @@ function emptyForm() {
   }
 }
 
-interface Resumen { inicial: number; saldo: number; prestado: number; cobrado: number; interes: number; abono: number }
+interface Resumen { inicial: number; saldo: number; prestado: number; capitalizado: number; cobrado: number; interes: number; abono: number }
 
 export default function PrestamosPage() {
   const [prestamos, setPrestamos] = useState<Prestamo[]>([])
@@ -44,14 +44,18 @@ export default function PrestamosPage() {
     const [presRes, cliRes, desRes, cuoRes] = await Promise.all([
       supabase.from('prestamos').select('*, cliente:clientes(*)').order('created_at', { ascending: false }),
       supabase.from('clientes').select('*').eq('activo', true).order('nombre'),
-      supabase.from('desembolsos').select('prestamo_id,monto'),
+      supabase.from('desembolsos').select('prestamo_id,monto,notas'),
       supabase.from('cuotas').select('prestamo_id,monto_pagado,interes'),
     ])
     setLoading(false)
     if (presRes.error) { toast.error(presRes.error.message); return }
     const adicionales = new Map<number, number>()
-    for (const d of (desRes.data || []) as { prestamo_id: number; monto: number }[]) {
+    const capitalizados = new Map<number, number>()
+    for (const d of (desRes.data || []) as { prestamo_id: number; monto: number; notas: string | null }[]) {
       adicionales.set(d.prestamo_id, (adicionales.get(d.prestamo_id) ?? 0) + Number(d.monto))
+      if ((d.notas || '').startsWith('Interés capitalizado')) {
+        capitalizados.set(d.prestamo_id, (capitalizados.get(d.prestamo_id) ?? 0) + Number(d.monto))
+      }
     }
     const abonos = new Map<number, number>()
     const cobrados = new Map<number, number>()
@@ -64,10 +68,11 @@ export default function PrestamosPage() {
     for (const p of (presRes.data || []) as { id: number; monto: number }[]) {
       const abono = abonos.get(p.id) ?? 0
       const cobrado = cobrados.get(p.id) ?? 0
+      const capitalizado = capitalizados.get(p.id) ?? 0
       res[p.id] = {
         inicial: redondear(Number(p.monto) - (adicionales.get(p.id) ?? 0)),
         saldo: Math.max(0, redondear(Number(p.monto) - abono)),
-        prestado: Number(p.monto), cobrado, abono, interes: cobrado - abono,
+        prestado: redondear(Number(p.monto) - capitalizado), capitalizado: redondear(capitalizado), cobrado, abono, interes: cobrado - abono,
       }
     }
     setResumen(res)
@@ -181,10 +186,16 @@ export default function PrestamosPage() {
       </div>
 
       {!loading && filtered.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
             <div className="text-[9px] font-bold text-slate-500 uppercase mb-1">Total prestado</div>
             <div className="text-[20px] font-extrabold text-[#0f172a]">{fmtMoney(suma('prestado'))}</div>
+            <div className="text-[10px] text-slate-400 mt-1">sin interés capitalizado</div>
+          </div>
+          <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
+            <div className="text-[9px] font-bold text-purple-700 uppercase mb-1">Interés capitalizado</div>
+            <div className="text-[20px] font-extrabold text-purple-700">{fmtMoney(suma('capitalizado'))}</div>
+            <div className="text-[10px] text-slate-400 mt-1">sumado al capital</div>
           </div>
           <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm p-5">
             <div className="text-[9px] font-bold text-emerald-700 uppercase mb-1">Total cobrado</div>
@@ -217,6 +228,7 @@ export default function PrestamosPage() {
                   <button type="button" onClick={() => cambiarOrden('inicio')} title="Ordenar por inicio" className="uppercase font-bold hover:text-emerald-700">Inicio{flecha('inicio')}</button>
                 </th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Monto inicial</th>
+                <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Capitalizado</th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Cobrado</th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Interés cobrado</th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Abono capital</th>
@@ -228,9 +240,9 @@ export default function PrestamosPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="py-10 text-center text-slate-400">Cargando…</td></tr>
+                <tr><td colSpan={11} className="py-10 text-center text-slate-400">Cargando…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={10} className="py-10 text-center text-slate-400">Sin préstamos</td></tr>
+                <tr><td colSpan={11} className="py-10 text-center text-slate-400">Sin préstamos</td></tr>
               ) : filtered.map((p, i) => (
                 <tr key={p.id} className={`border-b border-[#f1f5f9] ${i % 2 === 0 ? '' : 'bg-[#f8fafc]'}`}>
                   <td className="px-4 py-2.5">
@@ -240,6 +252,7 @@ export default function PrestamosPage() {
                   </td>
                   <td className="px-4 py-2.5 text-center text-slate-500">{fmtFecha(p.fecha_inicio)}</td>
                   <td className="px-4 py-2.5 text-right text-slate-600">{fmtMoney(resumen[p.id]?.inicial ?? p.monto)}</td>
+                  <td className="px-4 py-2.5 text-right text-purple-700">{(resumen[p.id]?.capitalizado ?? 0) > 0 ? fmtMoney(resumen[p.id].capitalizado) : '—'}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-emerald-700">{fmtMoney(resumen[p.id]?.cobrado ?? 0)}</td>
                   <td className="px-4 py-2.5 text-right text-amber-700">{fmtMoney(resumen[p.id]?.interes ?? 0)}</td>
                   <td className="px-4 py-2.5 text-right text-sky-700">{fmtMoney(resumen[p.id]?.abono ?? 0)}</td>
@@ -259,6 +272,7 @@ export default function PrestamosPage() {
                 <tr className="bg-[#f8fafc] border-t-2 border-[#e2e8f0] font-extrabold">
                   <td className="px-4 py-2.5 text-[#0f172a]" colSpan={2}>TOTAL ({filtered.length} préstamo{filtered.length === 1 ? '' : 's'})</td>
                   <td className="px-4 py-2.5 text-right text-slate-700">{fmtMoney(suma('inicial'))}</td>
+                  <td className="px-4 py-2.5 text-right text-purple-700">{fmtMoney(suma('capitalizado'))}</td>
                   <td className="px-4 py-2.5 text-right text-emerald-700">{fmtMoney(suma('cobrado'))}</td>
                   <td className="px-4 py-2.5 text-right text-amber-700">{fmtMoney(suma('interes'))}</td>
                   <td className="px-4 py-2.5 text-right text-sky-700">{fmtMoney(suma('abono'))}</td>
