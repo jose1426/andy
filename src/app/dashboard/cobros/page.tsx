@@ -53,10 +53,9 @@ const ESTADO_STYLE: Record<string, string> = {
   pendiente: 'bg-slate-100 text-slate-600 border-slate-300',
   parcial: 'bg-amber-100 text-amber-800 border-amber-300',
   atrasada: 'bg-red-100 text-red-800 border-red-300',
-  pagada: 'bg-emerald-100 text-emerald-800 border-emerald-300',
 }
 const ESTADO_LABEL: Record<string, string> = {
-  pendiente: 'Pendiente', parcial: 'Parcial', atrasada: 'Atrasada', pagada: 'Pagada adelantada',
+  pendiente: 'Pendiente', parcial: 'Parcial', atrasada: 'Atrasada',
 }
 
 export default function CobrosPage() {
@@ -79,9 +78,7 @@ export default function CobrosPage() {
     const [cuotasRes, pagosRes] = await Promise.all([
       supabase.from('cuotas')
         .select('*, prestamo:prestamos(id,monto,tasa_interes,fecha_inicio,cliente:clientes(nombre,apellido,cedula,telefono))')
-        // Además de las pendientes, se siguen mostrando las cuotas pagadas por adelantado
-        // (aún no vencen), marcadas como cubiertas, para ver la quincena completa.
-        .or(`estado.in.(pendiente,atrasada,parcial),and(estado.eq.pagada,fecha_vencimiento.gt.${hoyPanama()})`)
+        .in('estado', ['pendiente', 'atrasada', 'parcial'])
         .order('fecha_vencimiento'),
       supabase.from('pagos')
         .select('id,monto,fecha,tipo,forma_pago,cuota:cuotas(numero,prestamo:prestamos(id,cliente:clientes(nombre,apellido)))')
@@ -180,7 +177,7 @@ export default function CobrosPage() {
     }
   }
 
-  const totalPorCobrar = filtered.filter(c => c.estado !== 'pagada').reduce((s, c) => s + saldoCuota(c), 0)
+  const totalPorCobrar = filtered.reduce((s, c) => s + saldoCuota(c), 0)
 
   return (
     <div className="space-y-4 animate-fadeIn">
@@ -234,17 +231,8 @@ export default function CobrosPage() {
                   <td className="px-4 py-2.5">{fmtFecha(c.fecha_vencimiento)}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(c.saldo_capital)}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">
-                    {c.estado === 'pagada' ? (
-                      <span className="text-emerald-700">
-                        {fmtMoney(c.monto_pagado)}
-                        <span className="block text-[10px] font-semibold">pagado por adelantado</span>
-                      </span>
-                    ) : (
-                      <>
-                        {fmtMoney(saldoCuota(c))}
-                        {(c.recargo ?? 0) > 0 && <span className="block text-[10px] font-semibold text-purple-700">incl. recargo {fmtMoney(c.recargo)}</span>}
-                      </>
-                    )}
+                    {fmtMoney(saldoCuota(c))}
+                    {(c.recargo ?? 0) > 0 && <span className="block text-[10px] font-semibold text-purple-700">incl. recargo {fmtMoney(c.recargo)}</span>}
                   </td>
                   <td className="px-4 py-2.5 text-center">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${ESTADO_STYLE[c.estado]}`}>
@@ -252,9 +240,6 @@ export default function CobrosPage() {
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-center">
-                    {c.estado === 'pagada' ? (
-                      <span className="text-[11px] font-semibold text-emerald-700">✔ Cubierta</span>
-                    ) : (
                     <div className="flex items-center justify-center gap-2">
                       <button onClick={() => abrirPago(c)} className="px-3 py-1 rounded-md bg-emerald-600 text-white text-[11px] font-bold hover:bg-emerald-700">
                         💰 Cobrar
@@ -270,7 +255,6 @@ export default function CobrosPage() {
                         </span>
                       )}
                     </div>
-                    )}
                   </td>
                 </tr>
               ))}
