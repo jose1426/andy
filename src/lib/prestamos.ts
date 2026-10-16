@@ -9,6 +9,10 @@ export const fmtMoney = (v: number | null | undefined) =>
 export const fmtFecha = (d: string | null | undefined) =>
   d ? new Date(d + 'T00:00:00').toLocaleDateString('es-PA', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
 
+/** Fecha de hoy (YYYY-MM-DD) en hora de Panamá. toISOString() da la fecha UTC, que
+ * después de las 7 pm en Panamá ya es "mañana" y adelantaba el vencimiento de las cuotas. */
+export const hoyPanama = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Panama' }).format(new Date())
+
 /** Normaliza un teléfono local a formato internacional (Panamá +507) para enlaces wa.me. */
 export function telefonoWhatsapp(tel: string | null | undefined): string {
   const digitos = (tel || '').replace(/\D/g, '')
@@ -151,7 +155,7 @@ export function cuotasFaltantesHastaHoy(
   ultimoNumero: number, ultimaFechaVencimiento: string,
 ): CuotaNueva[] {
   if (saldoCapital <= 0) return []
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = hoyPanama()
   // Ya hay una cuota futura generada (la próxima por venir): no crear otra encima.
   if (ultimaFechaVencimiento > hoy) return []
   const nuevas: CuotaNueva[] = []
@@ -215,7 +219,7 @@ export const DIAS_GRACIA_CAPITALIZACION = 1
  * de haber visitado cada préstamo individualmente.
  */
 export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any, any, any>, prestamoId?: number) {
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = hoyPanama()
 
   let query = supabase.from('prestamos').select('id,monto,tasa_interes,frecuencia,estado,carga_historica,fecha_inicio,sin_prorrateo').in('estado', ['activo', 'en_mora'])
   if (prestamoId) query = query.eq('id', prestamoId)
@@ -304,29 +308,15 @@ export async function reconciliarPrestamosVencidos(supabase: SupabaseClient<any,
     const nuevas = cuotasFaltantesHastaHoy(p.frecuencia, p.tasa_interes, saldo, ultima.numero, ultima.fecha_vencimiento)
     if (nuevas.length) {
       await supabase.from('cuotas').insert(nuevas.map(c => ({
-        ...c, prestamo_id: p.id, estado: !p.carga_historica && c.fecha_vencimiento < hoy ? 'atrasada' : 'pendiente',
+        ...c, prestamo_id: p.id, estado: 'pendiente',
       })))
     }
 
-    // 4) Marcar atrasadas las pendientes vencidas (aún dentro de los días de gracia).
-    // Se omite en carga histórica: esas cuotas viejas no estaban realmente atrasadas.
-    const vencidas = p.carga_historica ? [] : abiertas.filter((c: any) => c.estado === 'pendiente' && c.fecha_vencimiento < hoy)
-    if (vencidas.length) {
-      await supabase.from('cuotas').update({ estado: 'atrasada' }).in('id', vencidas.map((c: any) => c.id)).eq('estado', 'pendiente')
-    }
-
-    if (!p.carga_historica && (nuevas.some(n => n.fecha_vencimiento < hoy) || vencidas.length || monto !== p.monto) && p.estado === 'activo') {
-      await supabase.from('prestamos').update({ estado: 'en_mora' }).eq('id', p.id).eq('estado', 'activo')
-    }
-
-    // 6) Quitar la mora cuando el cliente ya se puso al día: un préstamo en mora
-    // sin ninguna cuota vencida pendiente de pago vuelve a "activo".
+    // 4) La mora tampoco es automática: al pasar el 15 o el fin de mes la cuota
+    // sigue "pendiente" y el préstamo "activo" hasta que se pague o el usuario
+    // decida capitalizarla. Un "en mora" que haya quedado de antes se limpia.
     if (p.estado === 'en_mora') {
-      const { count } = await supabase.from('cuotas').select('id', { count: 'exact', head: true })
-        .eq('prestamo_id', p.id).in('estado', ['pendiente', 'atrasada', 'parcial']).lt('fecha_vencimiento', hoy)
-      if (count === 0) {
-        await supabase.from('prestamos').update({ estado: 'activo' }).eq('id', p.id).eq('estado', 'en_mora')
-      }
+      await supabase.from('prestamos').update({ estado: 'activo' }).eq('id', p.id).eq('estado', 'en_mora')
     }
   }
 }

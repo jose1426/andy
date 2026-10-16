@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { fmtMoney, fmtFecha, agruparCuotasCapitalizadas, reconciliarPrestamosVencidos, soloDecimal, telefonoWhatsapp, FORMA_PAGO_LABEL } from '@/lib/prestamos'
+import { fmtMoney, fmtFecha, agruparCuotasCapitalizadas, reconciliarPrestamosVencidos, hoyPanama, soloDecimal, telefonoWhatsapp, FORMA_PAGO_LABEL } from '@/lib/prestamos'
 import type { Cuota, FormaPago } from '@/types'
 
 interface CuotaRow extends Cuota {
@@ -113,7 +113,7 @@ export default function CobrosPage() {
   const abrirPago = async (c: CuotaRow) => {
     setCuotaSel(c)
     setMontoPago(String(saldoCuota(c).toFixed(2)))
-    setFechaPago(new Date().toISOString().slice(0, 10))
+    setFechaPago(hoyPanama())
     setFormaPago('efectivo')
     const { data } = await supabase.from('cuotas').select('*').eq('prestamo_id', c.prestamo.id).order('numero')
     setCuotasPrestamo((data || []) as Cuota[])

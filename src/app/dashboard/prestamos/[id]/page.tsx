@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { agruparCuotasCapitalizadas, fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, soloDecimal, anteriorVencimiento, diasEntre, interesProrrateado } from '@/lib/prestamos'
+import { agruparCuotasCapitalizadas, fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, hoyPanama, soloDecimal, anteriorVencimiento, diasEntre, interesProrrateado } from '@/lib/prestamos'
 import type { Cliente, Prestamo, Cuota, Pago, Desembolso, Frecuencia, FormaPago } from '@/types'
 
 const ESTADO_CUOTA_STYLE: Record<string, string> = {
@@ -68,7 +68,7 @@ export default function PrestamoDetallePage() {
 
   useEffect(() => { load() }, [load])
 
-  const hoyISO = new Date().toISOString().slice(0, 10)
+  const hoyISO = hoyPanama()
   const pendienteCuota = (c: Cuota) => Math.round((c.monto_cuota - c.monto_pagado) * 100) / 100
   const puedeCapitalizar = (c: Cuota) =>
     !prestamo?.carga_historica && c.fecha_vencimiento < hoyISO && c.estado !== 'pagada' && c.estado !== 'capitalizada' && pendienteCuota(c) > 0
@@ -99,7 +99,7 @@ export default function PrestamoDetallePage() {
     setCuotaSel(c)
     const recargo = agruparCuotasCapitalizadas(cuotas).get(c.numero)?.recargo ?? 0
     setMontoPago(String(Math.max(0, c.monto_cuota + recargo - c.monto_pagado).toFixed(2)))
-    setFechaPago(new Date().toISOString().slice(0, 10))
+    setFechaPago(hoyPanama())
     setFormaPago('efectivo')
     setModal(true)
   }
@@ -165,7 +165,7 @@ export default function PrestamoDetallePage() {
     }
   }
 
-  const abrirDesembolso = () => { setMontoDesem(''); setNotasDesem(''); setFechaDesem(new Date().toISOString().slice(0, 10)); setModalDesem(true) }
+  const abrirDesembolso = () => { setMontoDesem(''); setNotasDesem(''); setFechaDesem(hoyPanama()); setModalDesem(true) }
   const cerrarDesembolso = () => setModalDesem(false)
 
   const abrirEditar = () => {
