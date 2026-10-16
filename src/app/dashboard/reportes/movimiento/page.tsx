@@ -139,7 +139,7 @@ function ReporteMovimientoContent() {
         const interesDelCobro = Math.round((Number(pago.monto) - capitalDelCobro) * 100) / 100
         movs.push({
           key: `pago-${pago.id}`, fecha: pago.fecha, orden: orden++, tipo: 'pago',
-          descripcion: `${pago.notas || `Pago cuota #${cuota?.numero ?? '?'} · ${pago.tipo}`} · ${FORMA_PAGO_LABEL[pago.forma_pago]}`,
+          descripcion: `Pago cuota #${cuota?.numero ?? '?'} · ${pago.tipo} · ${FORMA_PAGO_LABEL[pago.forma_pago]}`,
           prestamoId: pago.prestamo_id, estadoPrestamo: estadoDe.get(pago.prestamo_id) ?? '', prestado: 0, cobrado: Number(pago.monto),
           interesDelCobro, capitalDelCobro, capitalDelta: -capitalDelCobro,
         })

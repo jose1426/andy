@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { Frecuencia, FormaPago, Cuota } from '@/types'
+import type { Frecuencia, FormaPago } from '@/types'
 
 export const FORMA_PAGO_LABEL: Record<FormaPago, string> = { yappy: 'Yappy', efectivo: 'Efectivo', transferencia: 'Transferencia' }
 
@@ -12,57 +12,6 @@ export const fmtFecha = (d: string | null | undefined) =>
 /** Fecha de hoy (YYYY-MM-DD) en hora de Panamá. toISOString() da la fecha UTC, que
  * después de las 7 pm en Panamá ya es "mañana" y adelantaba el vencimiento de las cuotas. */
 export const hoyPanama = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Panama' }).format(new Date())
-
-/**
- * Pago adelantado = el pago cae antes del vencimiento de la cuota. Se toma como un
- * abono a capital: NO cierra la cuota, que sigue pendiente y vence en su fecha con el
- * interés recalculado sobre el capital nuevo.
- * Para registrarlo sin tocar el modelo (capital abonado = lo pagado por encima del
- * interés de cada cuota), el abono se anota sobre la última cuota ya pagada anterior.
- * Devuelve esa cuota, o null si no hay (p. ej. la primera cuota del préstamo): en ese
- * caso el pago se registra normal.
- */
-export function cuotaAnclaAdelanto<T extends { numero: number; estado: string }>(
-  cuotas: T[], numeroCuota: number, fechaPago: string, fechaVencimiento: string,
-): T | null {
-  if (!fechaPago || fechaPago >= fechaVencimiento) return null
-  return [...cuotas].filter(c => c.estado === 'pagada' && c.numero < numeroCuota)
-    .sort((a, b) => b.numero - a.numero)[0] ?? null
-}
-
-export async function registrarAbonoAdelantado(
-  supabase: SupabaseClient<any, any, any>,
-  p: {
-    ancla: Cuota; cuotaSel: Cuota; cuotasPrestamo: Cuota[]
-    prestamo: { id: number; monto: number; tasa_interes: number }
-    monto: number; fecha: string; formaPago: FormaPago
-  },
-) {
-  const { ancla, cuotaSel, cuotasPrestamo, prestamo, monto } = p
-  const { error: errPago } = await supabase.from('pagos').insert({
-    cuota_id: ancla.id, prestamo_id: prestamo.id, monto, tipo: 'capital', fecha: p.fecha, forma_pago: p.formaPago,
-    notas: `Abono a capital (pago adelantado de la cuota #${cuotaSel.numero})`,
-  })
-  if (errPago) throw errPago
-
-  const nuevoPagadoAncla = Math.round((Number(ancla.monto_pagado) + monto) * 100) / 100
-  const { error: errCuota } = await supabase.from('cuotas').update({ monto_pagado: nuevoPagadoAncla }).eq('id', ancla.id)
-  if (errCuota) throw errCuota
-
-  const capitalPagadoTotal = cuotasPrestamo.filter(c => c.id !== ancla.id)
-    .reduce((s, c) => s + Math.max(0, Number(c.monto_pagado) - Number(c.interes)), 0)
-    + Math.max(0, nuevoPagadoAncla - Number(ancla.interes))
-  const nuevoSaldo = Math.max(0, Math.round((Number(prestamo.monto) - capitalPagadoTotal) * 100) / 100)
-  const nuevoInteres = Math.round(nuevoSaldo * (prestamo.tasa_interes / 100) * 100) / 100
-
-  const abiertas = cuotasPrestamo.filter(c => c.numero > ancla.numero && (c.estado === 'pendiente' || c.estado === 'atrasada'))
-  for (const c of abiertas) {
-    await supabase.from('cuotas').update({
-      interes: nuevoInteres, capital: 0, monto_cuota: nuevoInteres, saldo_capital: nuevoSaldo,
-    }).eq('id', c.id)
-  }
-  if (nuevoSaldo <= 0) await supabase.from('prestamos').update({ estado: 'pagado' }).eq('id', prestamo.id)
-}
 
 /** Normaliza un teléfono local a formato internacional (Panamá +507) para enlaces wa.me. */
 export function telefonoWhatsapp(tel: string | null | undefined): string {

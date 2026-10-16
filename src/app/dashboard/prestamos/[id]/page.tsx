@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
-import { agruparCuotasCapitalizadas, fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, hoyPanama, cuotaAnclaAdelanto, registrarAbonoAdelantado, soloDecimal, anteriorVencimiento, diasEntre, interesProrrateado } from '@/lib/prestamos'
+import { agruparCuotasCapitalizadas, fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, hoyPanama, soloDecimal, anteriorVencimiento, diasEntre, interesProrrateado } from '@/lib/prestamos'
 import type { Cliente, Prestamo, Cuota, Pago, Desembolso, Frecuencia, FormaPago } from '@/types'
 
 const ESTADO_CUOTA_STYLE: Record<string, string> = {
@@ -138,17 +138,6 @@ export default function PrestamoDetallePage() {
 
     setSaving(true)
     try {
-      const ancla = cuotaAnclaAdelanto(cuotas, cuotaSel.numero, fechaPago, cuotaSel.fecha_vencimiento)
-      if (ancla) {
-        await registrarAbonoAdelantado(supabase, {
-          ancla, cuotaSel, cuotasPrestamo: cuotas, prestamo, monto, fecha: fechaPago, formaPago,
-        })
-        toast.success('Abono a capital registrado. La cuota sigue pendiente hasta su vencimiento.')
-        cerrarModal()
-        load()
-        return
-      }
-
       const interesPagadoPrevio = Math.min(cuotaSel.monto_pagado, cuotaSel.interes)
       const capitalPagadoPrevio = Math.max(0, cuotaSel.monto_pagado - cuotaSel.interes)
       const nuevoMontoPagado = cuotaSel.monto_pagado + monto
@@ -550,13 +539,7 @@ export default function PrestamoDetallePage() {
                   <option value="transferencia">Transferencia</option>
                 </select>
               </div>
-              {cuotaAnclaAdelanto(cuotas, cuotaSel.numero, fechaPago, cuotaSel.fecha_vencimiento) ? (
-                <p className="text-[12px] font-semibold text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-3 py-2">
-                  Pago adelantado (antes del {fmtFecha(cuotaSel.fecha_vencimiento)}): se registra como abono a capital. La cuota sigue pendiente y vence en su fecha con el interés recalculado.
-                </p>
-              ) : (
-                <p className="text-[11px] text-slate-400">Si el monto supera el interés de la cuota, el excedente se abona a capital y reduce el interés de las próximas cuotas.</p>
-              )}
+              <p className="text-[11px] text-slate-400">Si el monto supera el interés de la cuota, el excedente se abona a capital y reduce el interés de las próximas cuotas.</p>
               <div className="flex justify-end gap-2.5 pt-2">
                 <button onClick={cerrarModal} className="px-4 py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-[13px] font-semibold">Cancelar</button>
                 <button onClick={registrarPago} disabled={saving} className="px-5 py-2 rounded-lg bg-gradient-to-r from-[#059669] to-[#10b981] text-white text-[13px] font-bold disabled:opacity-60">
