@@ -217,6 +217,9 @@ export default function PrestamosPage() {
                   <button type="button" onClick={() => cambiarOrden('inicio')} title="Ordenar por inicio" className="uppercase font-bold hover:text-emerald-700">Inicio{flecha('inicio')}</button>
                 </th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Monto inicial</th>
+                <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Cobrado</th>
+                <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Interés cobrado</th>
+                <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Abono capital</th>
                 <th className="px-4 py-2.5 text-right text-[11px] font-bold uppercase text-slate-500">Saldo</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Tasa</th>
                 <th className="px-4 py-2.5 text-center text-[11px] font-bold uppercase text-slate-500">Frecuencia</th>
@@ -225,9 +228,9 @@ export default function PrestamosPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} className="py-10 text-center text-slate-400">Cargando…</td></tr>
+                <tr><td colSpan={10} className="py-10 text-center text-slate-400">Cargando…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={7} className="py-10 text-center text-slate-400">Sin préstamos</td></tr>
+                <tr><td colSpan={10} className="py-10 text-center text-slate-400">Sin préstamos</td></tr>
               ) : filtered.map((p, i) => (
                 <tr key={p.id} className={`border-b border-[#f1f5f9] ${i % 2 === 0 ? '' : 'bg-[#f8fafc]'}`}>
                   <td className="px-4 py-2.5">
@@ -237,6 +240,9 @@ export default function PrestamosPage() {
                   </td>
                   <td className="px-4 py-2.5 text-center text-slate-500">{fmtFecha(p.fecha_inicio)}</td>
                   <td className="px-4 py-2.5 text-right text-slate-600">{fmtMoney(resumen[p.id]?.inicial ?? p.monto)}</td>
+                  <td className="px-4 py-2.5 text-right font-bold text-emerald-700">{fmtMoney(resumen[p.id]?.cobrado ?? 0)}</td>
+                  <td className="px-4 py-2.5 text-right text-amber-700">{fmtMoney(resumen[p.id]?.interes ?? 0)}</td>
+                  <td className="px-4 py-2.5 text-right text-sky-700">{fmtMoney(resumen[p.id]?.abono ?? 0)}</td>
                   <td className="px-4 py-2.5 text-right font-bold text-[#0f172a]">{fmtMoney(resumen[p.id]?.saldo ?? p.monto)}</td>
                   <td className="px-4 py-2.5 text-center text-slate-600">{p.tasa_interes}%</td>
                   <td className="px-4 py-2.5 text-center text-slate-600">{FRECUENCIA_LABEL[p.frecuencia]}</td>
@@ -252,7 +258,10 @@ export default function PrestamosPage() {
               <tfoot>
                 <tr className="bg-[#f8fafc] border-t-2 border-[#e2e8f0] font-extrabold">
                   <td className="px-4 py-2.5 text-[#0f172a]" colSpan={2}>TOTAL ({filtered.length} préstamo{filtered.length === 1 ? '' : 's'})</td>
-                  <td className="px-4 py-2.5 text-right text-slate-700">{fmtMoney(filtered.reduce((s, p) => s + (resumen[p.id]?.inicial ?? Number(p.monto)), 0))}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-700">{fmtMoney(suma('inicial'))}</td>
+                  <td className="px-4 py-2.5 text-right text-emerald-700">{fmtMoney(suma('cobrado'))}</td>
+                  <td className="px-4 py-2.5 text-right text-amber-700">{fmtMoney(suma('interes'))}</td>
+                  <td className="px-4 py-2.5 text-right text-sky-700">{fmtMoney(suma('abono'))}</td>
                   <td className="px-4 py-2.5 text-right text-[#0f172a]">{fmtMoney(filtered.reduce((s, p) => s + (resumen[p.id]?.saldo ?? Number(p.monto)), 0))}</td>
                   <td colSpan={3}></td>
                 </tr>
