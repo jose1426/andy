@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase/client'
 import { toast } from 'sonner'
+import CuotasAPagar from '@/components/CuotasAPagar'
 import { agruparCuotasCapitalizadas, fmtMoney, fmtFecha, FRECUENCIA_LABEL, FORMA_PAGO_LABEL, reconciliarPrestamosVencidos, hoyPanama, repartirPagoPorAntiguedad, registrarPagoPorAntiguedad, soloDecimal, anteriorVencimiento, diasEntre, interesProrrateado } from '@/lib/prestamos'
 import type { Cliente, Prestamo, Cuota, Pago, Desembolso, Frecuencia, FormaPago } from '@/types'
 
@@ -486,25 +487,7 @@ export default function PrestamoDetallePage() {
               <button onClick={cerrarModal} className="text-white/80 hover:text-white text-lg font-bold">✕</button>
             </div>
             <div className="p-6 space-y-3">
-              <div className="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-[12px] text-slate-600 space-y-1.5">
-                <div className="text-[10px] font-bold text-slate-500 uppercase">Cuotas a pagar · se paga desde la más antigua</div>
-                {repartirPagoPorAntiguedad(cuotas, recargoCuota, parseFloat(montoPago) || 0).map(a => (
-                  <div key={a.cuota.id} className="flex justify-between gap-3">
-                    <span>
-                      #{etiquetaCuota(a.cuota)} · {fmtFecha(a.cuota.fecha_vencimiento)}
-                      {recargoCuota(a.cuota) > 0 && <span className="block text-[10px] text-purple-700">incl. recargo {fmtMoney(recargoCuota(a.cuota))}</span>}
-                    </span>
-                    <span className="text-right whitespace-nowrap">
-                      debe {fmtMoney(a.capacidad)}
-                      <b className={`block ${a.aplicar > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>paga {fmtMoney(a.aplicar)}</b>
-                    </span>
-                  </div>
-                ))}
-                <div className="flex justify-between border-t border-slate-200 pt-1.5 text-red-600">
-                  <span>Total que debe</span>
-                  <b>{fmtMoney(repartirPagoPorAntiguedad(cuotas, recargoCuota, 0).reduce((s, a) => s + a.capacidad, 0))}</b>
-                </div>
-              </div>
+              <CuotasAPagar cuotas={cuotas} monto={parseFloat(montoPago) || 0} />
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto a pagar</label>

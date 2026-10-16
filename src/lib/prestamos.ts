@@ -15,6 +15,20 @@ export const hoyPanama = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Ame
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 
+/**
+ * Cuotas capitalizadas (interés ya sumado al capital) que se cobran junto con la cuota
+ * `numero`: las capitalizadas consecutivas que la preceden y aún tienen saldo. Es el mismo
+ * agrupamiento de agruparCuotasCapitalizadas, pero devolviendo cada cuota por separado.
+ */
+export function capitalizadasPrevias(cuotas: Cuota[], numero: number): Cuota[] {
+  let acum: Cuota[] = []
+  for (const c of [...cuotas].sort((a, b) => a.numero - b.numero)) {
+    if (c.numero === numero) return acum.filter(x => r2(Number(x.monto_cuota) - Number(x.monto_pagado)) > 0)
+    if (c.estado === 'capitalizada') acum.push(c); else acum = []
+  }
+  return []
+}
+
 export interface AsignacionPago<T extends Cuota = Cuota> { cuota: T; capacidad: number; aplicar: number }
 
 /**
