@@ -110,6 +110,29 @@ export default function PrestamoDetallePage() {
     load()
   }
 
+  // Anula un pago registrado por error: lo borra, resta el monto de su cuota (que vuelve a
+  // Pendiente o Parcial) y, al recargar, se recalcula el interés sobre el saldo resultante.
+  const anularPago = async (p: Pago) => {
+    const cuota = cuotas.find(c => c.id === p.cuota_id)
+    if (!window.confirm(`¿Anular el pago de ${fmtMoney(p.monto)} del ${fmtFecha(p.fecha)}${cuota ? ` (cuota #${cuota.numero})` : ''}? Se borra y la cuota vuelve a quedar debiendo ese monto.`)) return
+
+    const { data: borrados, error: errDel } = await supabase.from('pagos').delete().eq('id', p.id).select('id')
+    if (errDel) { toast.error('Error: ' + errDel.message); return }
+    if (!borrados?.length) { toast.error('No se pudo anular: no se borró el pago.'); return }
+
+    const { data: c, error: errC } = await supabase.from('cuotas').select('monto_pagado').eq('id', p.cuota_id).single()
+    if (errC || !c) { toast.error('Se borró el pago pero no se pudo actualizar la cuota. Avísame.'); return }
+    const pagado = Math.max(0, Math.round((Number(c.monto_pagado) - Number(p.monto)) * 100) / 100)
+    const { error: errUp } = await supabase.from('cuotas')
+      .update({ monto_pagado: pagado, estado: pagado > 0 ? 'parcial' : 'pendiente' }).eq('id', p.cuota_id)
+    if (errUp) { toast.error('Se borró el pago pero no se pudo actualizar la cuota. Avísame.'); return }
+
+    // Si el pago había cancelado el préstamo, vuelve a quedar activo.
+    await supabase.from('prestamos').update({ estado: 'activo' }).eq('id', id).eq('estado', 'pagado')
+    toast.success('Pago anulado.')
+    load()
+  }
+
   const capitalizarVencido = async () => {
     const vencidas = cuotas.filter(puedeCapitalizar)
     const total = Math.round(vencidas.reduce((s, c) => s + pendienteCuota(c), 0) * 100) / 100
@@ -468,10 +491,13 @@ export default function PrestamoDetallePage() {
           <div className="space-y-2">
             {pagos.map(p => (
               <div key={p.id} className="flex items-center justify-between text-[13px] border-b border-[#f1f5f9] pb-2 last:border-0">
-                <span className="text-slate-500">{fmtFecha(p.fecha)} · <span className="capitalize">{p.tipo}</span> · {FORMA_PAGO_LABEL[p.forma_pago]}</span>
+                <span className="text-slate-500">{fmtFecha(p.fecha)} · cuota #{cuotas.find(c => c.id === p.cuota_id)?.numero ?? '—'} · <span className="capitalize">{p.tipo}</span> · {FORMA_PAGO_LABEL[p.forma_pago]}</span>
                 <div className="flex items-center gap-3">
                   <span className="font-bold text-emerald-700">{fmtMoney(p.monto)}</span>
                   <Link href={`/dashboard/recibo/${p.id}`} className="text-[#0369a1] hover:underline text-[12px] font-semibold">🧾 Recibo</Link>
+                  <button onClick={() => anularPago(p)} className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-red-50 border border-slate-200 text-slate-600 hover:text-red-700 text-[11px] font-bold">
+                    ✕ Anular
+                  </button>
                 </div>
               </div>
             ))}
