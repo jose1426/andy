@@ -10,11 +10,12 @@ const r2 = (n: number) => Math.round(n * 100) / 100
  * cobran junto a una cuota) y cuánto se aplica a cada grupo con el monto escrito, de la más
  * antigua a la más reciente.
  */
-export default function CuotasAPagar({ cuotas, monto }: { cuotas: Cuota[]; monto: number }) {
+export default function CuotasAPagar({ cuotas, monto, fechaPago }: { cuotas: Cuota[]; monto: number; fechaPago?: string }) {
   const recargoDe = (c: Cuota) => capitalizadasPrevias(cuotas, c.numero)
     .reduce((s, x) => s + r2(Number(x.monto_cuota) - Number(x.monto_pagado)), 0)
-  const asignaciones = repartirPagoPorAntiguedad(cuotas, recargoDe, monto)
+  const asignaciones = repartirPagoPorAntiguedad(cuotas, recargoDe, monto, fechaPago)
   const totalDebe = asignaciones.reduce((s, a) => s + a.capacidad, 0)
+  const abonoCapital = Math.max(0, r2(monto - totalDebe))
 
   return (
     <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-3 text-[12px] text-slate-600 space-y-2">
@@ -44,6 +45,11 @@ export default function CuotasAPagar({ cuotas, monto }: { cuotas: Cuota[]; monto
       <div className="flex justify-between border-t border-slate-200 pt-1.5 font-bold text-red-600">
         <span>Total que debe</span><span>{fmtMoney(totalDebe)}</span>
       </div>
+      {abonoCapital > 0 && (
+        <div className="flex justify-between font-bold text-emerald-700">
+          <span>Abono a capital</span><span>{fmtMoney(abonoCapital)}</span>
+        </div>
+      )}
       {asignaciones.some(a => capitalizadasPrevias(cuotas, a.cuota.numero).length > 0) && (
         <p className="text-[10px] text-slate-400">El pago cubre primero el interés de la cuota y lo que sobra va a los intereses capitalizados (abona a capital).</p>
       )}

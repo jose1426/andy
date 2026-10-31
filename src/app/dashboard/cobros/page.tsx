@@ -150,7 +150,7 @@ export default function CobrosPage() {
     try {
       // El monto se reparte desde la cuota abierta más antigua hacia adelante.
       const grupos = agruparCuotasCapitalizadas(cuotasPrestamo)
-      const asignaciones = repartirPagoPorAntiguedad(cuotasPrestamo, x => grupos.get(x.numero)?.recargo ?? 0, monto)
+      const asignaciones = repartirPagoPorAntiguedad(cuotasPrestamo, x => grupos.get(x.numero)?.recargo ?? 0, monto, fechaPago || hoyPanama())
       await registrarPagoPorAntiguedad(supabase, {
         asignaciones, cuotasPrestamo, prestamo: cuotaSel.prestamo, fecha: fechaPago, formaPago,
       })
@@ -288,7 +288,7 @@ export default function CobrosPage() {
               <button onClick={cerrarModal} className="text-white/80 hover:text-white text-lg font-bold">✕</button>
             </div>
             <div className="p-6 space-y-3">
-              <CuotasAPagar cuotas={cuotasPrestamo} monto={parseFloat(montoPago) || 0} />
+              <CuotasAPagar cuotas={cuotasPrestamo} monto={parseFloat(montoPago) || 0} fechaPago={fechaPago || hoyPanama()} />
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 mb-1">Monto a pagar</label>

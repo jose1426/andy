@@ -32,17 +32,20 @@ export function capitalizadasPrevias(cuotas: Cuota[], numero: number): Cuota[] {
 export interface AsignacionPago<T extends Cuota = Cuota> { cuota: T; capacidad: number; aplicar: number }
 
 /**
- * Reparte un monto entre las cuotas abiertas de un préstamo, de la más antigua a la más
- * reciente. Cada cuota recibe hasta lo que debe (interés + recargo − ya pagado); si sobra
- * después de la última, el excedente se suma a esa última cuota (y por tanto abona a capital,
- * igual que cuando se paga de más una sola cuota).
+ * Reparte un monto entre las cuotas abiertas que ya vencieron a la fecha del pago, de la más
+ * antigua a la más reciente. Cada cuota recibe hasta lo que debe (interés + recargo − ya
+ * pagado); si sobra, el excedente se suma a la última y abona a capital. Las cuotas de
+ * quincenas futuras NO se cobran por adelantado: su interés se recalcula sobre el nuevo saldo.
+ * Si a la fecha no hay ninguna vencida, se cobra solo la próxima cuota (la del período en curso).
  */
 export function repartirPagoPorAntiguedad<T extends Cuota>(
-  cuotas: T[], recargoDe: (c: T) => number, monto: number,
+  cuotas: T[], recargoDe: (c: T) => number, monto: number, fechaPago: string = hoyPanama(),
 ): AsignacionPago<T>[] {
-  const abiertas = cuotas
+  const todasAbiertas = cuotas
     .filter(c => c.estado === 'pendiente' || c.estado === 'atrasada' || c.estado === 'parcial')
     .sort((a, b) => a.numero - b.numero)
+  const vencidas = todasAbiertas.filter(c => c.fecha_vencimiento <= fechaPago)
+  const abiertas = vencidas.length ? vencidas : todasAbiertas.slice(0, 1)
   let resto = r2(Math.max(0, monto))
   const res = abiertas.map(c => {
     const capacidad = Math.max(0, r2(Number(c.monto_cuota) + recargoDe(c) - Number(c.monto_pagado)))
